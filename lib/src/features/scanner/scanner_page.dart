@@ -42,6 +42,9 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
   _CapturedCode? _package1P;
   _CapturedCode? _package1T;
   String? _message;
+  // Holds a barcode captured when we need the user to confirm its role
+  // (single unclassified code, no positional info).
+  _CapturedCode? _pendingPackageCode;
 
   @override
   void dispose() {
@@ -73,12 +76,50 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
           IgnorePointer(
             child: Center(
               child: Container(
-                width: 280,
-                height: 200,
+                width: 320,
+                height: 260,
                 decoration: BoxDecoration(
                   border: Border.all(color: Colors.white, width: 3),
                   borderRadius: BorderRadius.circular(20),
                 ),
+                child:
+                    widget.mode == ScanMode.create &&
+                        _configuration ==
+                            ItemCodeConfiguration.packageAndItem &&
+                        _package1P == null
+                    ? Column(
+                        children: [
+                          Expanded(
+                            child: Center(
+                              child: Text(
+                                '1P',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.6),
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                          Divider(
+                            color: Colors.white.withValues(alpha: 0.4),
+                            height: 1,
+                          ),
+                          Expanded(
+                            child: Center(
+                              child: Text(
+                                '1T',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.6),
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    : null,
               ),
             ),
           ),
@@ -112,6 +153,7 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
                     _configuration = selection.single;
                     _package1P = null;
                     _package1T = null;
+                    _pendingPackageCode = null;
                     _message = null;
                   });
                 },
@@ -177,30 +219,119 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
     if (widget.mode == ScanMode.create &&
         _configuration == ItemCodeConfiguration.packageAndItem &&
         _package1P == null) {
-      final oneP = detected
-          .where((entry) => entry.parsed!.role == ItemCodeRole.package1P)
+      // --- Determine 1P / 1T roles ---
+      // Strategy 1: classifier embedded in raw value (GS1-128 etc.)
+      final classified1P = detected
+          .where((e) => e.parsed!.role == ItemCodeRole.package1P)
           .firstOrNull;
-      final oneT = detected
-          .where((entry) => entry.parsed!.role == ItemCodeRole.package1T)
+      final classified1T = detected
+          .where((e) => e.parsed!.role == ItemCodeRole.package1T)
           .firstOrNull;
-      if (oneP == null || oneT == null) {
+
+      if (classified1P != null && classified1T != null) {
+        // Both roles identified from embedded classifiers — accept immediately.
+        _handling = true;
+        _package1P = _CapturedCode(
+          value: classified1P.parsed!.value,
+          type: _mapFormat(classified1P.barcode.format),
+        );
+        _package1T = _CapturedCode(
+          value: classified1T.parsed!.value,
+          type: _mapFormat(classified1T.barcode.format),
+        );
         setState(() {
-          _message = 'Keep both the 1P and 1T barcodes visible in one frame.';
+          _message = 'Package captured. Now scan the code on the item.';
+          _handling = false;
         });
         return;
       }
-      _handling = true;
-      _package1P = _CapturedCode(
-        value: oneP.parsed!.value,
-        type: _mapFormat(oneP.barcode.format),
-      );
-      _package1T = _CapturedCode(
-        value: oneT.parsed!.value,
-        type: _mapFormat(oneT.barcode.format),
-      );
+
+      // Strategy 2: two unclassified barcodes in one frame — use vertical
+      // position (top = 1P, bottom = 1T), matching the standard label layout.
+      final unclassified = detected
+          .where((e) => e.parsed!.role == null)
+          .toList();
+
+      if (unclassified.length >= 2) {
+        // Sort by Y centre of the bounding box so top barcode → 1P.
+        unclassified.sort((a, b) {
+          final ay = _barcodeY(a.barcode);
+          final by = _barcodeY(b.barcode);
+          if (ay == null && by == null) return 0;
+          if (ay == null) return 1;
+          if (by == null) return -1;
+          return ay.compareTo(by);
+        });
+        _handling = true;
+        _package1P = _CapturedCode(
+          value: unclassified[0].parsed!.value,
+          type: _mapFormat(unclassified[0].barcode.format),
+        );
+        _package1T = _CapturedCode(
+          value: unclassified[1].parsed!.value,
+          type: _mapFormat(unclassified[1].barcode.format),
+        );
+        setState(() {
+          _message =
+              'Package captured (top→1P, bottom→1T). '
+              'Now scan the code on the item.';
+          _handling = false;
+        });
+        return;
+      }
+
+      // Strategy 3: exactly one unclassified barcode — ask the user which role.
+      if (unclassified.length == 1) {
+        final candidate = unclassified.first;
+        final already1P =
+            classified1P != null ||
+            (_pendingPackageCode != null &&
+                _pendingPackageCode!.value == candidate.parsed!.value);
+        if (!already1P) {
+          setState(() {
+            _message =
+                'Scanning… keep both 1P and 1T barcodes in the frame together.';
+          });
+          return;
+        }
+      }
+
+      // Strategy 4: one role known from classifier, one unknown from position.
+      if (classified1P != null && unclassified.length == 1) {
+        _handling = true;
+        _package1P = _CapturedCode(
+          value: classified1P.parsed!.value,
+          type: _mapFormat(classified1P.barcode.format),
+        );
+        _package1T = _CapturedCode(
+          value: unclassified.first.parsed!.value,
+          type: _mapFormat(unclassified.first.barcode.format),
+        );
+        setState(() {
+          _message = 'Package captured. Now scan the code on the item.';
+          _handling = false;
+        });
+        return;
+      }
+      if (classified1T != null && unclassified.length == 1) {
+        _handling = true;
+        _package1P = _CapturedCode(
+          value: unclassified.first.parsed!.value,
+          type: _mapFormat(unclassified.first.barcode.format),
+        );
+        _package1T = _CapturedCode(
+          value: classified1T.parsed!.value,
+          type: _mapFormat(classified1T.barcode.format),
+        );
+        setState(() {
+          _message = 'Package captured. Now scan the code on the item.';
+          _handling = false;
+        });
+        return;
+      }
+
       setState(() {
-        _message = 'Package captured. Now scan the code on the item.';
-        _handling = false;
+        _message = 'Keep both the 1P and 1T barcodes visible in one frame.';
       });
       return;
     }
@@ -326,21 +457,31 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
 
   String get _instruction {
     if (widget.mode == ScanMode.find) {
-      return 'Center one or more barcodes or QR codes inside the frame.';
+      return 'Center a barcode or QR code inside the frame.';
     }
     if (_configuration == ItemCodeConfiguration.itemOnly) {
       return 'Center the item barcode or QR code inside the frame.';
     }
     if (_package1P == null) {
-      return 'Fit both package barcodes (1P and 1T) in the frame together.';
+      return 'Frame both package barcodes together.\n'
+          'Top barcode will be 1P · Bottom will be 1T.';
     }
-    return 'Package captured. Center the item code inside the frame.';
+    return 'Package 1P + 1T captured ✓\nNow center the item code in the frame.';
   }
 
   Future<void> _resume() async {
     if (!mounted) return;
     _handling = false;
     await _controller.start();
+  }
+
+  /// Returns the vertical centre of a barcode's bounding box (0.0 = top).
+  /// Returns null if positional data is unavailable.
+  double? _barcodeY(Barcode barcode) {
+    final corners = barcode.corners;
+    if (corners.isEmpty) return null;
+    final totalY = corners.fold<double>(0, (sum, p) => sum + p.dy);
+    return totalY / corners.length;
   }
 
   ItemCodeType _mapFormat(BarcodeFormat format) => switch (format) {
