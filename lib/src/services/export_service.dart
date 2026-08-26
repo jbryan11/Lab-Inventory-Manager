@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../data/inventory_database.dart';
+import '../domain/inventory_enums.dart';
 
 class ExportService {
   ExportService(this._database);
@@ -15,7 +16,7 @@ class ExportService {
   Future<File> exportJson() async {
     final items = await _database.allItems();
     final payload = <String, Object?>{
-      'schemaVersion': 1,
+      'schemaVersion': 2,
       'exportedAt': DateTime.now().toUtc().toIso8601String(),
       'items': items.map(_itemToJson).toList(),
     };
@@ -34,28 +35,30 @@ class ExportService {
         'itemType',
         'category',
         'serialNumber',
-        'codeType',
-        'codeValue',
-        'codeSource',
+        'codeConfiguration',
+        'itemCode',
+        'package1P',
+        'package1T',
         'isArchived',
         'createdAt',
         'updatedAt',
         'archivedAt',
       ],
       ...items.map(
-        (item) => [
-          item.id,
-          item.name,
-          item.itemType.name,
-          item.category,
-          item.serialNumber ?? '',
-          item.codeType.name,
-          item.codeValue,
-          item.codeSource.name,
-          item.isArchived,
-          item.createdAt.toUtc().toIso8601String(),
-          item.updatedAt.toUtc().toIso8601String(),
-          item.archivedAt?.toUtc().toIso8601String() ?? '',
+        (entry) => [
+          entry.item.id,
+          entry.item.name,
+          entry.item.itemType.name,
+          entry.item.category,
+          entry.item.serialNumber ?? '',
+          entry.item.codeConfiguration.name,
+          entry.codeFor(ItemCodeRole.item)?.value ?? '',
+          entry.codeFor(ItemCodeRole.package1P)?.value ?? '',
+          entry.codeFor(ItemCodeRole.package1T)?.value ?? '',
+          entry.item.isArchived,
+          entry.item.createdAt.toUtc().toIso8601String(),
+          entry.item.updatedAt.toUtc().toIso8601String(),
+          entry.item.archivedAt?.toUtc().toIso8601String() ?? '',
         ],
       ),
     ];
@@ -67,18 +70,25 @@ class ExportService {
     return SharePlus.instance.share(ShareParams(files: [XFile(file.path)]));
   }
 
-  Map<String, Object?> _itemToJson(InventoryItem item) {
+  Map<String, Object?> _itemToJson(InventoryEntry entry) {
+    final item = entry.item;
     return {
       'id': item.id,
       'name': item.name,
       'itemType': item.itemType.name,
       'category': item.category,
       'serialNumber': item.serialNumber,
-      'code': {
-        'type': item.codeType.name,
-        'value': item.codeValue,
-        'source': item.codeSource.name,
-      },
+      'codeConfiguration': item.codeConfiguration.name,
+      'codes': entry.codes
+          .map(
+            (code) => {
+              'role': code.role.name,
+              'type': code.codeType.name,
+              'value': code.value,
+              'source': code.source.name,
+            },
+          )
+          .toList(),
       'isArchived': item.isArchived,
       'createdAt': item.createdAt.toUtc().toIso8601String(),
       'updatedAt': item.updatedAt.toUtc().toIso8601String(),

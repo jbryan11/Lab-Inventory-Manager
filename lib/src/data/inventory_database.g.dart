@@ -67,39 +67,18 @@ class $InventoryItemsTable extends InventoryItems
     requiredDuringInsert: false,
   );
   @override
-  late final GeneratedColumnWithTypeConverter<ItemCodeType, String> codeType =
+  late final GeneratedColumnWithTypeConverter<ItemCodeConfiguration, String>
+  codeConfiguration =
       GeneratedColumn<String>(
-        'code_type',
+        'code_configuration',
         aliasedName,
         false,
         type: DriftSqlType.string,
-        requiredDuringInsert: true,
-      ).withConverter<ItemCodeType>($InventoryItemsTable.$convertercodeType);
-  static const VerificationMeta _codeValueMeta = const VerificationMeta(
-    'codeValue',
-  );
-  @override
-  late final GeneratedColumn<String> codeValue = GeneratedColumn<String>(
-    'code_value',
-    aliasedName,
-    false,
-    additionalChecks: GeneratedColumn.checkTextLength(
-      minTextLength: 1,
-      maxTextLength: 500,
-    ),
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-    defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'),
-  );
-  @override
-  late final GeneratedColumnWithTypeConverter<ItemCodeSource, String>
-  codeSource = GeneratedColumn<String>(
-    'code_source',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  ).withConverter<ItemCodeSource>($InventoryItemsTable.$convertercodeSource);
+        requiredDuringInsert: false,
+        defaultValue: const Constant('itemOnly'),
+      ).withConverter<ItemCodeConfiguration>(
+        $InventoryItemsTable.$convertercodeConfiguration,
+      );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -155,9 +134,7 @@ class $InventoryItemsTable extends InventoryItems
     itemType,
     category,
     serialNumber,
-    codeType,
-    codeValue,
-    codeSource,
+    codeConfiguration,
     createdAt,
     updatedAt,
     isArchived,
@@ -204,14 +181,6 @@ class $InventoryItemsTable extends InventoryItems
           _serialNumberMeta,
         ),
       );
-    }
-    if (data.containsKey('code_value')) {
-      context.handle(
-        _codeValueMeta,
-        codeValue.isAcceptableOrUnknown(data['code_value']!, _codeValueMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_codeValueMeta);
     }
     if (data.containsKey('created_at')) {
       context.handle(
@@ -272,22 +241,13 @@ class $InventoryItemsTable extends InventoryItems
         DriftSqlType.string,
         data['${effectivePrefix}serial_number'],
       ),
-      codeType: $InventoryItemsTable.$convertercodeType.fromSql(
-        attachedDatabase.typeMapping.read(
-          DriftSqlType.string,
-          data['${effectivePrefix}code_type'],
-        )!,
-      ),
-      codeValue: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}code_value'],
-      )!,
-      codeSource: $InventoryItemsTable.$convertercodeSource.fromSql(
-        attachedDatabase.typeMapping.read(
-          DriftSqlType.string,
-          data['${effectivePrefix}code_source'],
-        )!,
-      ),
+      codeConfiguration: $InventoryItemsTable.$convertercodeConfiguration
+          .fromSql(
+            attachedDatabase.typeMapping.read(
+              DriftSqlType.string,
+              data['${effectivePrefix}code_configuration'],
+            )!,
+          ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -314,11 +274,9 @@ class $InventoryItemsTable extends InventoryItems
 
   static JsonTypeConverter2<LabItemType, String, String> $converteritemType =
       const EnumNameConverter<LabItemType>(LabItemType.values);
-  static JsonTypeConverter2<ItemCodeType, String, String> $convertercodeType =
-      const EnumNameConverter<ItemCodeType>(ItemCodeType.values);
-  static JsonTypeConverter2<ItemCodeSource, String, String>
-  $convertercodeSource = const EnumNameConverter<ItemCodeSource>(
-    ItemCodeSource.values,
+  static JsonTypeConverter2<ItemCodeConfiguration, String, String>
+  $convertercodeConfiguration = const EnumNameConverter<ItemCodeConfiguration>(
+    ItemCodeConfiguration.values,
   );
 }
 
@@ -328,9 +286,7 @@ class InventoryItem extends DataClass implements Insertable<InventoryItem> {
   final LabItemType itemType;
   final String category;
   final String? serialNumber;
-  final ItemCodeType codeType;
-  final String codeValue;
-  final ItemCodeSource codeSource;
+  final ItemCodeConfiguration codeConfiguration;
   final DateTime createdAt;
   final DateTime updatedAt;
   final bool isArchived;
@@ -341,9 +297,7 @@ class InventoryItem extends DataClass implements Insertable<InventoryItem> {
     required this.itemType,
     required this.category,
     this.serialNumber,
-    required this.codeType,
-    required this.codeValue,
-    required this.codeSource,
+    required this.codeConfiguration,
     required this.createdAt,
     required this.updatedAt,
     required this.isArchived,
@@ -364,14 +318,10 @@ class InventoryItem extends DataClass implements Insertable<InventoryItem> {
       map['serial_number'] = Variable<String>(serialNumber);
     }
     {
-      map['code_type'] = Variable<String>(
-        $InventoryItemsTable.$convertercodeType.toSql(codeType),
-      );
-    }
-    map['code_value'] = Variable<String>(codeValue);
-    {
-      map['code_source'] = Variable<String>(
-        $InventoryItemsTable.$convertercodeSource.toSql(codeSource),
+      map['code_configuration'] = Variable<String>(
+        $InventoryItemsTable.$convertercodeConfiguration.toSql(
+          codeConfiguration,
+        ),
       );
     }
     map['created_at'] = Variable<DateTime>(createdAt);
@@ -392,9 +342,7 @@ class InventoryItem extends DataClass implements Insertable<InventoryItem> {
       serialNumber: serialNumber == null && nullToAbsent
           ? const Value.absent()
           : Value(serialNumber),
-      codeType: Value(codeType),
-      codeValue: Value(codeValue),
-      codeSource: Value(codeSource),
+      codeConfiguration: Value(codeConfiguration),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
       isArchived: Value(isArchived),
@@ -417,13 +365,8 @@ class InventoryItem extends DataClass implements Insertable<InventoryItem> {
       ),
       category: serializer.fromJson<String>(json['category']),
       serialNumber: serializer.fromJson<String?>(json['serialNumber']),
-      codeType: $InventoryItemsTable.$convertercodeType.fromJson(
-        serializer.fromJson<String>(json['codeType']),
-      ),
-      codeValue: serializer.fromJson<String>(json['codeValue']),
-      codeSource: $InventoryItemsTable.$convertercodeSource.fromJson(
-        serializer.fromJson<String>(json['codeSource']),
-      ),
+      codeConfiguration: $InventoryItemsTable.$convertercodeConfiguration
+          .fromJson(serializer.fromJson<String>(json['codeConfiguration'])),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
       isArchived: serializer.fromJson<bool>(json['isArchived']),
@@ -441,12 +384,10 @@ class InventoryItem extends DataClass implements Insertable<InventoryItem> {
       ),
       'category': serializer.toJson<String>(category),
       'serialNumber': serializer.toJson<String?>(serialNumber),
-      'codeType': serializer.toJson<String>(
-        $InventoryItemsTable.$convertercodeType.toJson(codeType),
-      ),
-      'codeValue': serializer.toJson<String>(codeValue),
-      'codeSource': serializer.toJson<String>(
-        $InventoryItemsTable.$convertercodeSource.toJson(codeSource),
+      'codeConfiguration': serializer.toJson<String>(
+        $InventoryItemsTable.$convertercodeConfiguration.toJson(
+          codeConfiguration,
+        ),
       ),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
@@ -461,9 +402,7 @@ class InventoryItem extends DataClass implements Insertable<InventoryItem> {
     LabItemType? itemType,
     String? category,
     Value<String?> serialNumber = const Value.absent(),
-    ItemCodeType? codeType,
-    String? codeValue,
-    ItemCodeSource? codeSource,
+    ItemCodeConfiguration? codeConfiguration,
     DateTime? createdAt,
     DateTime? updatedAt,
     bool? isArchived,
@@ -474,9 +413,7 @@ class InventoryItem extends DataClass implements Insertable<InventoryItem> {
     itemType: itemType ?? this.itemType,
     category: category ?? this.category,
     serialNumber: serialNumber.present ? serialNumber.value : this.serialNumber,
-    codeType: codeType ?? this.codeType,
-    codeValue: codeValue ?? this.codeValue,
-    codeSource: codeSource ?? this.codeSource,
+    codeConfiguration: codeConfiguration ?? this.codeConfiguration,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     isArchived: isArchived ?? this.isArchived,
@@ -491,11 +428,9 @@ class InventoryItem extends DataClass implements Insertable<InventoryItem> {
       serialNumber: data.serialNumber.present
           ? data.serialNumber.value
           : this.serialNumber,
-      codeType: data.codeType.present ? data.codeType.value : this.codeType,
-      codeValue: data.codeValue.present ? data.codeValue.value : this.codeValue,
-      codeSource: data.codeSource.present
-          ? data.codeSource.value
-          : this.codeSource,
+      codeConfiguration: data.codeConfiguration.present
+          ? data.codeConfiguration.value
+          : this.codeConfiguration,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       isArchived: data.isArchived.present
@@ -515,9 +450,7 @@ class InventoryItem extends DataClass implements Insertable<InventoryItem> {
           ..write('itemType: $itemType, ')
           ..write('category: $category, ')
           ..write('serialNumber: $serialNumber, ')
-          ..write('codeType: $codeType, ')
-          ..write('codeValue: $codeValue, ')
-          ..write('codeSource: $codeSource, ')
+          ..write('codeConfiguration: $codeConfiguration, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('isArchived: $isArchived, ')
@@ -533,9 +466,7 @@ class InventoryItem extends DataClass implements Insertable<InventoryItem> {
     itemType,
     category,
     serialNumber,
-    codeType,
-    codeValue,
-    codeSource,
+    codeConfiguration,
     createdAt,
     updatedAt,
     isArchived,
@@ -550,9 +481,7 @@ class InventoryItem extends DataClass implements Insertable<InventoryItem> {
           other.itemType == this.itemType &&
           other.category == this.category &&
           other.serialNumber == this.serialNumber &&
-          other.codeType == this.codeType &&
-          other.codeValue == this.codeValue &&
-          other.codeSource == this.codeSource &&
+          other.codeConfiguration == this.codeConfiguration &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
           other.isArchived == this.isArchived &&
@@ -565,9 +494,7 @@ class InventoryItemsCompanion extends UpdateCompanion<InventoryItem> {
   final Value<LabItemType> itemType;
   final Value<String> category;
   final Value<String?> serialNumber;
-  final Value<ItemCodeType> codeType;
-  final Value<String> codeValue;
-  final Value<ItemCodeSource> codeSource;
+  final Value<ItemCodeConfiguration> codeConfiguration;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<bool> isArchived;
@@ -579,9 +506,7 @@ class InventoryItemsCompanion extends UpdateCompanion<InventoryItem> {
     this.itemType = const Value.absent(),
     this.category = const Value.absent(),
     this.serialNumber = const Value.absent(),
-    this.codeType = const Value.absent(),
-    this.codeValue = const Value.absent(),
-    this.codeSource = const Value.absent(),
+    this.codeConfiguration = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.isArchived = const Value.absent(),
@@ -594,9 +519,7 @@ class InventoryItemsCompanion extends UpdateCompanion<InventoryItem> {
     required LabItemType itemType,
     required String category,
     this.serialNumber = const Value.absent(),
-    required ItemCodeType codeType,
-    required String codeValue,
-    required ItemCodeSource codeSource,
+    this.codeConfiguration = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
     this.isArchived = const Value.absent(),
@@ -606,9 +529,6 @@ class InventoryItemsCompanion extends UpdateCompanion<InventoryItem> {
        name = Value(name),
        itemType = Value(itemType),
        category = Value(category),
-       codeType = Value(codeType),
-       codeValue = Value(codeValue),
-       codeSource = Value(codeSource),
        createdAt = Value(createdAt),
        updatedAt = Value(updatedAt);
   static Insertable<InventoryItem> custom({
@@ -617,9 +537,7 @@ class InventoryItemsCompanion extends UpdateCompanion<InventoryItem> {
     Expression<String>? itemType,
     Expression<String>? category,
     Expression<String>? serialNumber,
-    Expression<String>? codeType,
-    Expression<String>? codeValue,
-    Expression<String>? codeSource,
+    Expression<String>? codeConfiguration,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<bool>? isArchived,
@@ -632,9 +550,7 @@ class InventoryItemsCompanion extends UpdateCompanion<InventoryItem> {
       if (itemType != null) 'item_type': itemType,
       if (category != null) 'category': category,
       if (serialNumber != null) 'serial_number': serialNumber,
-      if (codeType != null) 'code_type': codeType,
-      if (codeValue != null) 'code_value': codeValue,
-      if (codeSource != null) 'code_source': codeSource,
+      if (codeConfiguration != null) 'code_configuration': codeConfiguration,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (isArchived != null) 'is_archived': isArchived,
@@ -649,9 +565,7 @@ class InventoryItemsCompanion extends UpdateCompanion<InventoryItem> {
     Value<LabItemType>? itemType,
     Value<String>? category,
     Value<String?>? serialNumber,
-    Value<ItemCodeType>? codeType,
-    Value<String>? codeValue,
-    Value<ItemCodeSource>? codeSource,
+    Value<ItemCodeConfiguration>? codeConfiguration,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<bool>? isArchived,
@@ -664,9 +578,7 @@ class InventoryItemsCompanion extends UpdateCompanion<InventoryItem> {
       itemType: itemType ?? this.itemType,
       category: category ?? this.category,
       serialNumber: serialNumber ?? this.serialNumber,
-      codeType: codeType ?? this.codeType,
-      codeValue: codeValue ?? this.codeValue,
-      codeSource: codeSource ?? this.codeSource,
+      codeConfiguration: codeConfiguration ?? this.codeConfiguration,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       isArchived: isArchived ?? this.isArchived,
@@ -695,17 +607,11 @@ class InventoryItemsCompanion extends UpdateCompanion<InventoryItem> {
     if (serialNumber.present) {
       map['serial_number'] = Variable<String>(serialNumber.value);
     }
-    if (codeType.present) {
-      map['code_type'] = Variable<String>(
-        $InventoryItemsTable.$convertercodeType.toSql(codeType.value),
-      );
-    }
-    if (codeValue.present) {
-      map['code_value'] = Variable<String>(codeValue.value);
-    }
-    if (codeSource.present) {
-      map['code_source'] = Variable<String>(
-        $InventoryItemsTable.$convertercodeSource.toSql(codeSource.value),
+    if (codeConfiguration.present) {
+      map['code_configuration'] = Variable<String>(
+        $InventoryItemsTable.$convertercodeConfiguration.toSql(
+          codeConfiguration.value,
+        ),
       );
     }
     if (createdAt.present) {
@@ -734,9 +640,7 @@ class InventoryItemsCompanion extends UpdateCompanion<InventoryItem> {
           ..write('itemType: $itemType, ')
           ..write('category: $category, ')
           ..write('serialNumber: $serialNumber, ')
-          ..write('codeType: $codeType, ')
-          ..write('codeValue: $codeValue, ')
-          ..write('codeSource: $codeSource, ')
+          ..write('codeConfiguration: $codeConfiguration, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('isArchived: $isArchived, ')
@@ -747,15 +651,442 @@ class InventoryItemsCompanion extends UpdateCompanion<InventoryItem> {
   }
 }
 
+class $InventoryItemCodesTable extends InventoryItemCodes
+    with TableInfo<$InventoryItemCodesTable, InventoryItemCode> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $InventoryItemCodesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _itemIdMeta = const VerificationMeta('itemId');
+  @override
+  late final GeneratedColumn<String> itemId = GeneratedColumn<String>(
+    'item_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<ItemCodeRole, String> role =
+      GeneratedColumn<String>(
+        'role',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<ItemCodeRole>($InventoryItemCodesTable.$converterrole);
+  @override
+  late final GeneratedColumnWithTypeConverter<ItemCodeType, String> codeType =
+      GeneratedColumn<String>(
+        'code_type',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<ItemCodeType>(
+        $InventoryItemCodesTable.$convertercodeType,
+      );
+  static const VerificationMeta _valueMeta = const VerificationMeta('value');
+  @override
+  late final GeneratedColumn<String> value = GeneratedColumn<String>(
+    'value',
+    aliasedName,
+    false,
+    additionalChecks: GeneratedColumn.checkTextLength(
+      minTextLength: 1,
+      maxTextLength: 500,
+    ),
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'),
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<ItemCodeSource, String> source =
+      GeneratedColumn<String>(
+        'source',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<ItemCodeSource>(
+        $InventoryItemCodesTable.$convertersource,
+      );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    itemId,
+    role,
+    codeType,
+    value,
+    source,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'inventory_item_codes';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<InventoryItemCode> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('item_id')) {
+      context.handle(
+        _itemIdMeta,
+        itemId.isAcceptableOrUnknown(data['item_id']!, _itemIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_itemIdMeta);
+    }
+    if (data.containsKey('value')) {
+      context.handle(
+        _valueMeta,
+        value.isAcceptableOrUnknown(data['value']!, _valueMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_valueMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+    {itemId, role},
+  ];
+  @override
+  InventoryItemCode map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return InventoryItemCode(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      itemId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}item_id'],
+      )!,
+      role: $InventoryItemCodesTable.$converterrole.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}role'],
+        )!,
+      ),
+      codeType: $InventoryItemCodesTable.$convertercodeType.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}code_type'],
+        )!,
+      ),
+      value: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}value'],
+      )!,
+      source: $InventoryItemCodesTable.$convertersource.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}source'],
+        )!,
+      ),
+    );
+  }
+
+  @override
+  $InventoryItemCodesTable createAlias(String alias) {
+    return $InventoryItemCodesTable(attachedDatabase, alias);
+  }
+
+  static JsonTypeConverter2<ItemCodeRole, String, String> $converterrole =
+      const EnumNameConverter<ItemCodeRole>(ItemCodeRole.values);
+  static JsonTypeConverter2<ItemCodeType, String, String> $convertercodeType =
+      const EnumNameConverter<ItemCodeType>(ItemCodeType.values);
+  static JsonTypeConverter2<ItemCodeSource, String, String> $convertersource =
+      const EnumNameConverter<ItemCodeSource>(ItemCodeSource.values);
+}
+
+class InventoryItemCode extends DataClass
+    implements Insertable<InventoryItemCode> {
+  final int id;
+  final String itemId;
+  final ItemCodeRole role;
+  final ItemCodeType codeType;
+  final String value;
+  final ItemCodeSource source;
+  const InventoryItemCode({
+    required this.id,
+    required this.itemId,
+    required this.role,
+    required this.codeType,
+    required this.value,
+    required this.source,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['item_id'] = Variable<String>(itemId);
+    {
+      map['role'] = Variable<String>(
+        $InventoryItemCodesTable.$converterrole.toSql(role),
+      );
+    }
+    {
+      map['code_type'] = Variable<String>(
+        $InventoryItemCodesTable.$convertercodeType.toSql(codeType),
+      );
+    }
+    map['value'] = Variable<String>(value);
+    {
+      map['source'] = Variable<String>(
+        $InventoryItemCodesTable.$convertersource.toSql(source),
+      );
+    }
+    return map;
+  }
+
+  InventoryItemCodesCompanion toCompanion(bool nullToAbsent) {
+    return InventoryItemCodesCompanion(
+      id: Value(id),
+      itemId: Value(itemId),
+      role: Value(role),
+      codeType: Value(codeType),
+      value: Value(value),
+      source: Value(source),
+    );
+  }
+
+  factory InventoryItemCode.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return InventoryItemCode(
+      id: serializer.fromJson<int>(json['id']),
+      itemId: serializer.fromJson<String>(json['itemId']),
+      role: $InventoryItemCodesTable.$converterrole.fromJson(
+        serializer.fromJson<String>(json['role']),
+      ),
+      codeType: $InventoryItemCodesTable.$convertercodeType.fromJson(
+        serializer.fromJson<String>(json['codeType']),
+      ),
+      value: serializer.fromJson<String>(json['value']),
+      source: $InventoryItemCodesTable.$convertersource.fromJson(
+        serializer.fromJson<String>(json['source']),
+      ),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'itemId': serializer.toJson<String>(itemId),
+      'role': serializer.toJson<String>(
+        $InventoryItemCodesTable.$converterrole.toJson(role),
+      ),
+      'codeType': serializer.toJson<String>(
+        $InventoryItemCodesTable.$convertercodeType.toJson(codeType),
+      ),
+      'value': serializer.toJson<String>(value),
+      'source': serializer.toJson<String>(
+        $InventoryItemCodesTable.$convertersource.toJson(source),
+      ),
+    };
+  }
+
+  InventoryItemCode copyWith({
+    int? id,
+    String? itemId,
+    ItemCodeRole? role,
+    ItemCodeType? codeType,
+    String? value,
+    ItemCodeSource? source,
+  }) => InventoryItemCode(
+    id: id ?? this.id,
+    itemId: itemId ?? this.itemId,
+    role: role ?? this.role,
+    codeType: codeType ?? this.codeType,
+    value: value ?? this.value,
+    source: source ?? this.source,
+  );
+  InventoryItemCode copyWithCompanion(InventoryItemCodesCompanion data) {
+    return InventoryItemCode(
+      id: data.id.present ? data.id.value : this.id,
+      itemId: data.itemId.present ? data.itemId.value : this.itemId,
+      role: data.role.present ? data.role.value : this.role,
+      codeType: data.codeType.present ? data.codeType.value : this.codeType,
+      value: data.value.present ? data.value.value : this.value,
+      source: data.source.present ? data.source.value : this.source,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('InventoryItemCode(')
+          ..write('id: $id, ')
+          ..write('itemId: $itemId, ')
+          ..write('role: $role, ')
+          ..write('codeType: $codeType, ')
+          ..write('value: $value, ')
+          ..write('source: $source')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, itemId, role, codeType, value, source);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is InventoryItemCode &&
+          other.id == this.id &&
+          other.itemId == this.itemId &&
+          other.role == this.role &&
+          other.codeType == this.codeType &&
+          other.value == this.value &&
+          other.source == this.source);
+}
+
+class InventoryItemCodesCompanion extends UpdateCompanion<InventoryItemCode> {
+  final Value<int> id;
+  final Value<String> itemId;
+  final Value<ItemCodeRole> role;
+  final Value<ItemCodeType> codeType;
+  final Value<String> value;
+  final Value<ItemCodeSource> source;
+  const InventoryItemCodesCompanion({
+    this.id = const Value.absent(),
+    this.itemId = const Value.absent(),
+    this.role = const Value.absent(),
+    this.codeType = const Value.absent(),
+    this.value = const Value.absent(),
+    this.source = const Value.absent(),
+  });
+  InventoryItemCodesCompanion.insert({
+    this.id = const Value.absent(),
+    required String itemId,
+    required ItemCodeRole role,
+    required ItemCodeType codeType,
+    required String value,
+    required ItemCodeSource source,
+  }) : itemId = Value(itemId),
+       role = Value(role),
+       codeType = Value(codeType),
+       value = Value(value),
+       source = Value(source);
+  static Insertable<InventoryItemCode> custom({
+    Expression<int>? id,
+    Expression<String>? itemId,
+    Expression<String>? role,
+    Expression<String>? codeType,
+    Expression<String>? value,
+    Expression<String>? source,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (itemId != null) 'item_id': itemId,
+      if (role != null) 'role': role,
+      if (codeType != null) 'code_type': codeType,
+      if (value != null) 'value': value,
+      if (source != null) 'source': source,
+    });
+  }
+
+  InventoryItemCodesCompanion copyWith({
+    Value<int>? id,
+    Value<String>? itemId,
+    Value<ItemCodeRole>? role,
+    Value<ItemCodeType>? codeType,
+    Value<String>? value,
+    Value<ItemCodeSource>? source,
+  }) {
+    return InventoryItemCodesCompanion(
+      id: id ?? this.id,
+      itemId: itemId ?? this.itemId,
+      role: role ?? this.role,
+      codeType: codeType ?? this.codeType,
+      value: value ?? this.value,
+      source: source ?? this.source,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (itemId.present) {
+      map['item_id'] = Variable<String>(itemId.value);
+    }
+    if (role.present) {
+      map['role'] = Variable<String>(
+        $InventoryItemCodesTable.$converterrole.toSql(role.value),
+      );
+    }
+    if (codeType.present) {
+      map['code_type'] = Variable<String>(
+        $InventoryItemCodesTable.$convertercodeType.toSql(codeType.value),
+      );
+    }
+    if (value.present) {
+      map['value'] = Variable<String>(value.value);
+    }
+    if (source.present) {
+      map['source'] = Variable<String>(
+        $InventoryItemCodesTable.$convertersource.toSql(source.value),
+      );
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('InventoryItemCodesCompanion(')
+          ..write('id: $id, ')
+          ..write('itemId: $itemId, ')
+          ..write('role: $role, ')
+          ..write('codeType: $codeType, ')
+          ..write('value: $value, ')
+          ..write('source: $source')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$InventoryDatabase extends GeneratedDatabase {
   _$InventoryDatabase(QueryExecutor e) : super(e);
   $InventoryDatabaseManager get managers => $InventoryDatabaseManager(this);
   late final $InventoryItemsTable inventoryItems = $InventoryItemsTable(this);
+  late final $InventoryItemCodesTable inventoryItemCodes =
+      $InventoryItemCodesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
   @override
-  List<DatabaseSchemaEntity> get allSchemaEntities => [inventoryItems];
+  List<DatabaseSchemaEntity> get allSchemaEntities => [
+    inventoryItems,
+    inventoryItemCodes,
+  ];
 }
 
 typedef $$InventoryItemsTableCreateCompanionBuilder =
@@ -765,9 +1096,7 @@ typedef $$InventoryItemsTableCreateCompanionBuilder =
       required LabItemType itemType,
       required String category,
       Value<String?> serialNumber,
-      required ItemCodeType codeType,
-      required String codeValue,
-      required ItemCodeSource codeSource,
+      Value<ItemCodeConfiguration> codeConfiguration,
       required DateTime createdAt,
       required DateTime updatedAt,
       Value<bool> isArchived,
@@ -781,9 +1110,7 @@ typedef $$InventoryItemsTableUpdateCompanionBuilder =
       Value<LabItemType> itemType,
       Value<String> category,
       Value<String?> serialNumber,
-      Value<ItemCodeType> codeType,
-      Value<String> codeValue,
-      Value<ItemCodeSource> codeSource,
+      Value<ItemCodeConfiguration> codeConfiguration,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<bool> isArchived,
@@ -826,20 +1153,13 @@ class $$InventoryItemsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnWithTypeConverterFilters<ItemCodeType, ItemCodeType, String>
-  get codeType => $composableBuilder(
-    column: $table.codeType,
-    builder: (column) => ColumnWithTypeConverterFilters(column),
-  );
-
-  ColumnFilters<String> get codeValue => $composableBuilder(
-    column: $table.codeValue,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnWithTypeConverterFilters<ItemCodeSource, ItemCodeSource, String>
-  get codeSource => $composableBuilder(
-    column: $table.codeSource,
+  ColumnWithTypeConverterFilters<
+    ItemCodeConfiguration,
+    ItemCodeConfiguration,
+    String
+  >
+  get codeConfiguration => $composableBuilder(
+    column: $table.codeConfiguration,
     builder: (column) => ColumnWithTypeConverterFilters(column),
   );
 
@@ -898,18 +1218,8 @@ class $$InventoryItemsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get codeType => $composableBuilder(
-    column: $table.codeType,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get codeValue => $composableBuilder(
-    column: $table.codeValue,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get codeSource => $composableBuilder(
-    column: $table.codeSource,
+  ColumnOrderings<String> get codeConfiguration => $composableBuilder(
+    column: $table.codeConfiguration,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -960,17 +1270,11 @@ class $$InventoryItemsTableAnnotationComposer
     builder: (column) => column,
   );
 
-  GeneratedColumnWithTypeConverter<ItemCodeType, String> get codeType =>
-      $composableBuilder(column: $table.codeType, builder: (column) => column);
-
-  GeneratedColumn<String> get codeValue =>
-      $composableBuilder(column: $table.codeValue, builder: (column) => column);
-
-  GeneratedColumnWithTypeConverter<ItemCodeSource, String> get codeSource =>
-      $composableBuilder(
-        column: $table.codeSource,
-        builder: (column) => column,
-      );
+  GeneratedColumnWithTypeConverter<ItemCodeConfiguration, String>
+  get codeConfiguration => $composableBuilder(
+    column: $table.codeConfiguration,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -1031,9 +1335,8 @@ class $$InventoryItemsTableTableManager
                 Value<LabItemType> itemType = const Value.absent(),
                 Value<String> category = const Value.absent(),
                 Value<String?> serialNumber = const Value.absent(),
-                Value<ItemCodeType> codeType = const Value.absent(),
-                Value<String> codeValue = const Value.absent(),
-                Value<ItemCodeSource> codeSource = const Value.absent(),
+                Value<ItemCodeConfiguration> codeConfiguration =
+                    const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<bool> isArchived = const Value.absent(),
@@ -1045,9 +1348,7 @@ class $$InventoryItemsTableTableManager
                 itemType: itemType,
                 category: category,
                 serialNumber: serialNumber,
-                codeType: codeType,
-                codeValue: codeValue,
-                codeSource: codeSource,
+                codeConfiguration: codeConfiguration,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 isArchived: isArchived,
@@ -1061,9 +1362,8 @@ class $$InventoryItemsTableTableManager
                 required LabItemType itemType,
                 required String category,
                 Value<String?> serialNumber = const Value.absent(),
-                required ItemCodeType codeType,
-                required String codeValue,
-                required ItemCodeSource codeSource,
+                Value<ItemCodeConfiguration> codeConfiguration =
+                    const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
                 Value<bool> isArchived = const Value.absent(),
@@ -1075,9 +1375,7 @@ class $$InventoryItemsTableTableManager
                 itemType: itemType,
                 category: category,
                 serialNumber: serialNumber,
-                codeType: codeType,
-                codeValue: codeValue,
-                codeSource: codeSource,
+                codeConfiguration: codeConfiguration,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 isArchived: isArchived,
@@ -1113,10 +1411,241 @@ typedef $$InventoryItemsTableProcessedTableManager =
       InventoryItem,
       PrefetchHooks Function()
     >;
+typedef $$InventoryItemCodesTableCreateCompanionBuilder =
+    InventoryItemCodesCompanion Function({
+      Value<int> id,
+      required String itemId,
+      required ItemCodeRole role,
+      required ItemCodeType codeType,
+      required String value,
+      required ItemCodeSource source,
+    });
+typedef $$InventoryItemCodesTableUpdateCompanionBuilder =
+    InventoryItemCodesCompanion Function({
+      Value<int> id,
+      Value<String> itemId,
+      Value<ItemCodeRole> role,
+      Value<ItemCodeType> codeType,
+      Value<String> value,
+      Value<ItemCodeSource> source,
+    });
+
+class $$InventoryItemCodesTableFilterComposer
+    extends Composer<_$InventoryDatabase, $InventoryItemCodesTable> {
+  $$InventoryItemCodesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get itemId => $composableBuilder(
+    column: $table.itemId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<ItemCodeRole, ItemCodeRole, String> get role =>
+      $composableBuilder(
+        column: $table.role,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnWithTypeConverterFilters<ItemCodeType, ItemCodeType, String>
+  get codeType => $composableBuilder(
+    column: $table.codeType,
+    builder: (column) => ColumnWithTypeConverterFilters(column),
+  );
+
+  ColumnFilters<String> get value => $composableBuilder(
+    column: $table.value,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<ItemCodeSource, ItemCodeSource, String>
+  get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnWithTypeConverterFilters(column),
+  );
+}
+
+class $$InventoryItemCodesTableOrderingComposer
+    extends Composer<_$InventoryDatabase, $InventoryItemCodesTable> {
+  $$InventoryItemCodesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get itemId => $composableBuilder(
+    column: $table.itemId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get role => $composableBuilder(
+    column: $table.role,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get codeType => $composableBuilder(
+    column: $table.codeType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get value => $composableBuilder(
+    column: $table.value,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$InventoryItemCodesTableAnnotationComposer
+    extends Composer<_$InventoryDatabase, $InventoryItemCodesTable> {
+  $$InventoryItemCodesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get itemId =>
+      $composableBuilder(column: $table.itemId, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<ItemCodeRole, String> get role =>
+      $composableBuilder(column: $table.role, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<ItemCodeType, String> get codeType =>
+      $composableBuilder(column: $table.codeType, builder: (column) => column);
+
+  GeneratedColumn<String> get value =>
+      $composableBuilder(column: $table.value, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<ItemCodeSource, String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => column);
+}
+
+class $$InventoryItemCodesTableTableManager
+    extends
+        RootTableManager<
+          _$InventoryDatabase,
+          $InventoryItemCodesTable,
+          InventoryItemCode,
+          $$InventoryItemCodesTableFilterComposer,
+          $$InventoryItemCodesTableOrderingComposer,
+          $$InventoryItemCodesTableAnnotationComposer,
+          $$InventoryItemCodesTableCreateCompanionBuilder,
+          $$InventoryItemCodesTableUpdateCompanionBuilder,
+          (
+            InventoryItemCode,
+            BaseReferences<
+              _$InventoryDatabase,
+              $InventoryItemCodesTable,
+              InventoryItemCode
+            >,
+          ),
+          InventoryItemCode,
+          PrefetchHooks Function()
+        > {
+  $$InventoryItemCodesTableTableManager(
+    _$InventoryDatabase db,
+    $InventoryItemCodesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$InventoryItemCodesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$InventoryItemCodesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$InventoryItemCodesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> itemId = const Value.absent(),
+                Value<ItemCodeRole> role = const Value.absent(),
+                Value<ItemCodeType> codeType = const Value.absent(),
+                Value<String> value = const Value.absent(),
+                Value<ItemCodeSource> source = const Value.absent(),
+              }) => InventoryItemCodesCompanion(
+                id: id,
+                itemId: itemId,
+                role: role,
+                codeType: codeType,
+                value: value,
+                source: source,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String itemId,
+                required ItemCodeRole role,
+                required ItemCodeType codeType,
+                required String value,
+                required ItemCodeSource source,
+              }) => InventoryItemCodesCompanion.insert(
+                id: id,
+                itemId: itemId,
+                role: role,
+                codeType: codeType,
+                value: value,
+                source: source,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$InventoryItemCodesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$InventoryDatabase,
+      $InventoryItemCodesTable,
+      InventoryItemCode,
+      $$InventoryItemCodesTableFilterComposer,
+      $$InventoryItemCodesTableOrderingComposer,
+      $$InventoryItemCodesTableAnnotationComposer,
+      $$InventoryItemCodesTableCreateCompanionBuilder,
+      $$InventoryItemCodesTableUpdateCompanionBuilder,
+      (
+        InventoryItemCode,
+        BaseReferences<
+          _$InventoryDatabase,
+          $InventoryItemCodesTable,
+          InventoryItemCode
+        >,
+      ),
+      InventoryItemCode,
+      PrefetchHooks Function()
+    >;
 
 class $InventoryDatabaseManager {
   final _$InventoryDatabase _db;
   $InventoryDatabaseManager(this._db);
   $$InventoryItemsTableTableManager get inventoryItems =>
       $$InventoryItemsTableTableManager(_db, _db.inventoryItems);
+  $$InventoryItemCodesTableTableManager get inventoryItemCodes =>
+      $$InventoryItemCodesTableTableManager(_db, _db.inventoryItemCodes);
 }

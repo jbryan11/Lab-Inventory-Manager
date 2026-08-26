@@ -8,7 +8,7 @@ import '../../domain/inventory_enums.dart';
 class ItemLabel extends StatelessWidget {
   const ItemLabel({super.key, required this.item});
 
-  final InventoryItem item;
+  final InventoryEntry item;
 
   @override
   Widget build(BuildContext context) {
@@ -20,7 +20,7 @@ class ItemLabel extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              item.name,
+              item.item.name,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
@@ -31,16 +31,16 @@ class ItemLabel extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            if (item.codeType == ItemCodeType.qr)
+            if (item.codeFor(ItemCodeRole.item)!.codeType == ItemCodeType.qr)
               QrImageView(
-                data: item.codeValue,
+                data: item.codeFor(ItemCodeRole.item)!.value,
                 size: 180,
                 backgroundColor: Colors.white,
               )
             else
               BarcodeWidget(
                 barcode: Barcode.code128(),
-                data: item.codeValue,
+                data: item.codeFor(ItemCodeRole.item)!.value,
                 width: 280,
                 height: 120,
                 color: Colors.black,
@@ -51,7 +51,7 @@ class ItemLabel extends StatelessWidget {
               ),
             const SizedBox(height: 8),
             Text(
-              'ID: ${item.id}',
+              'ID: ${item.item.id}',
               textAlign: TextAlign.center,
               style: const TextStyle(color: Colors.black, fontSize: 11),
             ),

@@ -5,6 +5,8 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../domain/inventory_enums.dart';
 import '../../providers.dart';
+import 'code_parser.dart';
+import '../../widgets/home_back_button.dart';
 
 enum ScanMode { find, create }
 
@@ -22,14 +24,24 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
     formats: const [
       BarcodeFormat.qrCode,
       BarcodeFormat.code128,
+      BarcodeFormat.code39,
+      BarcodeFormat.code93,
+      BarcodeFormat.codabar,
       BarcodeFormat.ean13,
       BarcodeFormat.ean8,
       BarcodeFormat.upcA,
       BarcodeFormat.upcE,
       BarcodeFormat.dataMatrix,
+      BarcodeFormat.itf14,
+      BarcodeFormat.pdf417,
+      BarcodeFormat.aztec,
     ],
   );
   bool _handling = false;
+  ItemCodeConfiguration _configuration = ItemCodeConfiguration.itemOnly;
+  _CapturedCode? _package1P;
+  _CapturedCode? _package1T;
+  String? _message;
 
   @override
   void dispose() {
@@ -42,6 +54,7 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
+        leading: const HomeBackButton(),
         title: Text(
           widget.mode == ScanMode.find ? 'Scan to find' : 'Scan new item',
         ),
@@ -69,6 +82,41 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
               ),
             ),
           ),
+          if (widget.mode == ScanMode.create)
+            Positioned(
+              left: 16,
+              right: 16,
+              top: 16,
+              child: SegmentedButton<ItemCodeConfiguration>(
+                style: SegmentedButton.styleFrom(
+                  backgroundColor: Colors.black87,
+                  foregroundColor: Colors.white,
+                  selectedBackgroundColor: Theme.of(context)
+                      .colorScheme
+                      .primary,
+                  selectedForegroundColor: Colors.white,
+                ),
+                segments: const [
+                  ButtonSegment(
+                    value: ItemCodeConfiguration.itemOnly,
+                    label: Text('Item only'),
+                  ),
+                  ButtonSegment(
+                    value: ItemCodeConfiguration.packageAndItem,
+                    label: Text('Package + item'),
+                  ),
+                ],
+                selected: {_configuration},
+                onSelectionChanged: (selection) {
+                  setState(() {
+                    _configuration = selection.single;
+                    _package1P = null;
+                    _package1T = null;
+                    _message = null;
+                  });
+                },
+              ),
+            ),
           Positioned(
             left: 24,
             right: 24,
@@ -78,12 +126,34 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
                 color: Colors.black87,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Padding(
+              child: Padding(
                 padding: EdgeInsets.all(14),
-                child: Text(
-                  'Center a barcode or QR code inside the frame.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _instruction,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    if (_message != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        _message!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.amber),
+                      ),
+                    ],
+                    if (widget.mode == ScanMode.create &&
+                        _configuration ==
+                            ItemCodeConfiguration.packageAndItem) ...[
+                      const SizedBox(height: 8),
+                      TextButton(
+                        onPressed: _openManualPackageForm,
+                        child: const Text('Enter codes manually'),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
@@ -95,24 +165,87 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
 
   Future<void> _onDetect(BarcodeCapture capture) async {
     if (_handling) return;
-    final barcode = capture.barcodes
-        .where((item) => item.rawValue?.trim().isNotEmpty ?? false)
-        .firstOrNull;
-    if (barcode == null) return;
+    final detected = capture.barcodes
+        .map(
+          (barcode) =>
+              (barcode: barcode, parsed: parseScannedCode(barcode.rawValue)),
+        )
+        .where((entry) => entry.parsed != null)
+        .toList();
+    if (detected.isEmpty) return;
+
+    if (widget.mode == ScanMode.create &&
+        _configuration == ItemCodeConfiguration.packageAndItem &&
+        _package1P == null) {
+      final oneP = detected
+          .where((entry) => entry.parsed!.role == ItemCodeRole.package1P)
+          .firstOrNull;
+      final oneT = detected
+          .where((entry) => entry.parsed!.role == ItemCodeRole.package1T)
+          .firstOrNull;
+      if (oneP == null || oneT == null) {
+        setState(() {
+          _message = 'Keep both the 1P and 1T barcodes visible in one frame.';
+        });
+        return;
+      }
+      _handling = true;
+      _package1P = _CapturedCode(
+        value: oneP.parsed!.value,
+        type: _mapFormat(oneP.barcode.format),
+      );
+      _package1T = _CapturedCode(
+        value: oneT.parsed!.value,
+        type: _mapFormat(oneT.barcode.format),
+      );
+      setState(() {
+        _message = 'Package captured. Now scan the code on the item.';
+        _handling = false;
+      });
+      return;
+    }
+
+    final itemCandidates =
+        widget.mode == ScanMode.create &&
+            _configuration == ItemCodeConfiguration.packageAndItem
+        ? detected
+              .where(
+                (entry) =>
+                    entry.parsed!.value != _package1P!.value &&
+                    entry.parsed!.value != _package1T!.value,
+              )
+              .toList()
+        : detected;
+    if (itemCandidates.isEmpty) {
+      setState(() {
+        _message = 'Move the package away, then scan the code on the item.';
+      });
+      return;
+    }
+    final entry = itemCandidates.first;
+    final barcode = entry.barcode;
     _handling = true;
     await _controller.stop();
 
-    final value = barcode.rawValue!.trim();
-    final item = await ref.read(inventoryDatabaseProvider).itemByCode(value);
+    final rawValue = barcode.rawValue!.trim();
+    final value = widget.mode == ScanMode.create
+        ? rawValue
+        : entry.parsed!.value;
+    final database = ref.read(inventoryDatabaseProvider);
+    var item = await database.itemByCode(value);
+    if (item == null && rawValue != value) {
+      item = await database.itemByCode(rawValue);
+    }
     if (!mounted) return;
 
-    if (item != null) {
-      if (item.isArchived) {
+    final foundItem = item;
+    if (foundItem != null) {
+      if (foundItem.item.isArchived) {
         final restore = await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('Archived item'),
-            content: Text('${item.name} is archived. Restore it?'),
+            content: Text('${foundItem.item.name} is archived. Restore it?'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
@@ -128,15 +261,15 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
         if (restore == true) {
           await ref
               .read(inventoryDatabaseProvider)
-              .setArchived(item.id, archived: false);
+              .setArchived(foundItem.item.id, archived: false);
           ref.invalidate(activeItemsProvider);
-          if (mounted) context.go('/item/${item.id}');
+          if (mounted) context.go('/item/${foundItem.item.id}');
           return;
         }
         await _resume();
         return;
       }
-      context.go('/item/${item.id}');
+      context.go('/item/${foundItem.item.id}');
       return;
     }
 
@@ -173,9 +306,35 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
   void _openCreate(String value, ItemCodeType type) {
     final uri = Uri(
       path: '/item/new',
-      queryParameters: {'code': value, 'codeType': type.name},
+      queryParameters: {
+        'code': value,
+        'codeType': type.name,
+        if (_configuration == ItemCodeConfiguration.packageAndItem)
+          'packageMode': 'true',
+        if (_package1P != null) 'package1P': _package1P!.value,
+        if (_package1P != null) 'package1PType': _package1P!.type.name,
+        if (_package1T != null) 'package1T': _package1T!.value,
+        if (_package1T != null) 'package1TType': _package1T!.type.name,
+      },
     );
     context.go(uri.toString());
+  }
+
+  void _openManualPackageForm() {
+    _openCreate('', ItemCodeType.unknown);
+  }
+
+  String get _instruction {
+    if (widget.mode == ScanMode.find) {
+      return 'Center one or more barcodes or QR codes inside the frame.';
+    }
+    if (_configuration == ItemCodeConfiguration.itemOnly) {
+      return 'Center the item barcode or QR code inside the frame.';
+    }
+    if (_package1P == null) {
+      return 'Fit both package barcodes (1P and 1T) in the frame together.';
+    }
+    return 'Package captured. Center the item code inside the frame.';
   }
 
   Future<void> _resume() async {
@@ -187,11 +346,24 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
   ItemCodeType _mapFormat(BarcodeFormat format) => switch (format) {
     BarcodeFormat.qrCode => ItemCodeType.qr,
     BarcodeFormat.code128 => ItemCodeType.code128,
+    BarcodeFormat.code39 => ItemCodeType.code39,
+    BarcodeFormat.code93 => ItemCodeType.code93,
+    BarcodeFormat.codabar => ItemCodeType.codabar,
     BarcodeFormat.ean13 => ItemCodeType.ean13,
     BarcodeFormat.ean8 => ItemCodeType.ean8,
     BarcodeFormat.upcA => ItemCodeType.upcA,
     BarcodeFormat.upcE => ItemCodeType.upcE,
     BarcodeFormat.dataMatrix => ItemCodeType.dataMatrix,
+    BarcodeFormat.itf14 => ItemCodeType.itf,
+    BarcodeFormat.pdf417 => ItemCodeType.pdf417,
+    BarcodeFormat.aztec => ItemCodeType.aztec,
     _ => ItemCodeType.unknown,
   };
+}
+
+class _CapturedCode {
+  const _CapturedCode({required this.value, required this.type});
+
+  final String value;
+  final ItemCodeType type;
 }

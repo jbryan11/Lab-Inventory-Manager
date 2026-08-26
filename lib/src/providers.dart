@@ -9,15 +9,15 @@ final inventoryDatabaseProvider = Provider<InventoryDatabase>((ref) {
   return database;
 });
 
-final activeItemsProvider = StreamProvider<List<InventoryItem>>((ref) {
+final activeItemsProvider = StreamProvider<List<InventoryEntry>>((ref) {
   return ref.watch(inventoryDatabaseProvider).watchItems(archived: false);
 });
 
-final archivedItemsProvider = StreamProvider<List<InventoryItem>>((ref) {
+final archivedItemsProvider = StreamProvider<List<InventoryEntry>>((ref) {
   return ref.watch(inventoryDatabaseProvider).watchItems(archived: true);
 });
 
-final itemProvider = FutureProvider.family<InventoryItem?, String>((ref, id) {
+final itemProvider = FutureProvider.family<InventoryEntry?, String>((ref, id) {
   return ref.watch(inventoryDatabaseProvider).itemById(id);
 });
 
