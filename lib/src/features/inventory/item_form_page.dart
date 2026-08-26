@@ -1,12 +1,15 @@
+import 'package:barcode_widget/barcode_widget.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../data/inventory_database.dart';
 import '../../domain/inventory_enums.dart';
 import '../../providers.dart';
+import '../scanner/scanner_page.dart';
 
 class ItemFormPage extends ConsumerStatefulWidget {
   const ItemFormPage({
@@ -191,37 +194,58 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
                 },
               ),
             const SizedBox(height: 16),
-            DropdownButtonFormField<ItemCodeType>(
-              initialValue: _codeType,
-              decoration: const InputDecoration(labelText: 'Code type'),
-              items:
-                  (_codeSource == ItemCodeSource.generated
-                          ? [ItemCodeType.qr, ItemCodeType.code128]
-                          : ItemCodeType.values)
-                      .map(
-                        (type) => DropdownMenuItem(
-                          value: type,
-                          child: Text(type.label),
-                        ),
-                      )
-                      .toList(),
-              onChanged: _isEditing
-                  ? null
-                  : (value) => setState(() => _codeType = value!),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<ItemCodeType>(
+                    key: ValueKey(_codeType),
+                    initialValue: _codeType,
+                    decoration: const InputDecoration(labelText: 'Code type'),
+                    items:
+                        (_codeSource == ItemCodeSource.generated
+                                ? [ItemCodeType.qr, ItemCodeType.code128]
+                                : ItemCodeType.values)
+                            .map(
+                              (type) => DropdownMenuItem(
+                                value: type,
+                                child: Text(type.label),
+                              ),
+                            )
+                            .toList(),
+                    onChanged: _isEditing
+                        ? null
+                        : (value) => setState(() => _codeType = value!),
+                  ),
+                ),
+                if (!_isEditing &&
+                    _codeSource == ItemCodeSource.scanned) ...[
+                  const SizedBox(width: 12),
+                  SizedBox.square(
+                    dimension: 56,
+                    child: IconButton.outlined(
+                      tooltip: 'Scan code',
+                      onPressed: _scanCode,
+                      icon: const Icon(Icons.qr_code_scanner),
+                    ),
+                  ),
+                ],
+              ],
             ),
+            if (_codeController.text.trim().isNotEmpty) ...[
+              const SizedBox(height: 16),
+              _CodePreview(
+                type: _codeType,
+                value: _codeController.text.trim(),
+              ),
+            ],
             const SizedBox(height: 16),
             TextFormField(
               controller: _codeController,
               readOnly: _codeSource == ItemCodeSource.generated || _isEditing,
-              decoration: InputDecoration(
+              onChanged: (_) => setState(() {}),
+              decoration: const InputDecoration(
                 labelText: 'Barcode / QR value',
-                suffixIcon: !_isEditing && _codeSource == ItemCodeSource.scanned
-                    ? IconButton(
-                        tooltip: 'Scan code',
-                        onPressed: () => context.push('/scan/create'),
-                        icon: const Icon(Icons.qr_code_scanner),
-                      )
-                    : null,
               ),
               validator: _required,
             ),
@@ -239,6 +263,17 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
 
   String? _required(String? value) {
     return value == null || value.trim().isEmpty ? 'Required' : null;
+  }
+
+  Future<void> _scanCode() async {
+    final result = await context.push<ScanResult>(
+      '/scan/create?returnResult=true',
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      _codeType = result.type;
+      _codeController.text = result.value;
+    });
   }
 
   Future<void> _save() async {
@@ -293,4 +328,62 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
           .showSnackBar(SnackBar(content: Text('Could not save item: $error')));
     }
   }
+}
+
+class _CodePreview extends StatelessWidget {
+  const _CodePreview({required this.type, required this.value});
+
+  final ItemCodeType type;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final preview = type == ItemCodeType.qr
+        ? QrImageView(
+            data: value,
+            size: 160,
+            backgroundColor: Colors.white,
+          )
+        : BarcodeWidget(
+            barcode: _barcodeFor(type),
+            data: value,
+            width: 280,
+            height: 110,
+            color: Colors.black,
+            backgroundColor: Colors.white,
+            drawText: true,
+            errorBuilder: (context, error) => Text(
+              error,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          );
+
+    return Semantics(
+      label: '${type.label} preview',
+      child: Center(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: Theme.of(context).colorScheme.outline),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: preview,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Barcode _barcodeFor(ItemCodeType type) => switch (type) {
+    ItemCodeType.ean13 => Barcode.ean13(),
+    ItemCodeType.ean8 => Barcode.ean8(),
+    ItemCodeType.upcA => Barcode.upcA(),
+    ItemCodeType.upcE => Barcode.upcE(),
+    ItemCodeType.dataMatrix => Barcode.dataMatrix(),
+    ItemCodeType.qr || ItemCodeType.code128 || ItemCodeType.unknown =>
+      Barcode.code128(),
+  };
 }

@@ -49,6 +49,7 @@ class LabInventoryApp extends StatelessWidget {
           mode: state.pathParameters['mode'] == 'create'
               ? ScanMode.create
               : ScanMode.find,
+          returnResult: state.uri.queryParameters['returnResult'] == 'true',
         ),
       ),
     ],

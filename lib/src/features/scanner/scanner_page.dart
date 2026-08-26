@@ -8,10 +8,17 @@ import '../../providers.dart';
 
 enum ScanMode { find, create }
 
+typedef ScanResult = ({String value, ItemCodeType type});
+
 class ScannerPage extends ConsumerStatefulWidget {
-  const ScannerPage({super.key, required this.mode});
+  const ScannerPage({
+    super.key,
+    required this.mode,
+    this.returnResult = false,
+  });
 
   final ScanMode mode;
+  final bool returnResult;
 
   @override
   ConsumerState<ScannerPage> createState() => _ScannerPageState();
@@ -103,6 +110,12 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
     await _controller.stop();
 
     final value = barcode.rawValue!.trim();
+    final type = _mapFormat(barcode.format);
+    if (widget.returnResult) {
+      context.pop((value: value, type: type));
+      return;
+    }
+
     final item = await ref.read(inventoryDatabaseProvider).itemByCode(value);
     if (!mounted) return;
 
@@ -140,7 +153,6 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
       return;
     }
 
-    final type = _mapFormat(barcode.format);
     if (widget.mode == ScanMode.create) {
       _openCreate(value, type);
       return;

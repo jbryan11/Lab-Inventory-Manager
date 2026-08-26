@@ -14,46 +14,54 @@ class InventoryHomePage extends ConsumerStatefulWidget {
 }
 
 class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
+  final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
   String _query = '';
   LabItemType? _type;
+  bool _searchExpanded = false;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final items = ref.watch(activeItemsProvider);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Lab inventory'),
-        actions: [
-          PopupMenuButton<_MenuAction>(
-            onSelected: _handleMenu,
-            itemBuilder: (context) => const [
-              PopupMenuItem(
-                value: _MenuAction.exportJson,
-                child: Text('Export JSON'),
+        titleSpacing: 0,
+        title: _searchExpanded
+            ? SearchBar(
+                controller: _searchController,
+                focusNode: _searchFocusNode,
+                hintText: 'Search inventory',
+                leading: const Icon(Icons.search),
+                trailing: [
+                  IconButton(
+                    tooltip: 'Close search',
+                    onPressed: _closeSearch,
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+                onChanged: _updateQuery,
+              )
+            : Row(
+                children: [
+                  const Expanded(child: Text('Lab inventory')),
+                  IconButton(
+                    tooltip: 'Search inventory',
+                    onPressed: _openSearch,
+                    icon: const Icon(Icons.search),
+                  ),
+                ],
               ),
-              PopupMenuItem(
-                value: _MenuAction.exportCsv,
-                child: Text('Export CSV'),
-              ),
-              PopupMenuItem(
-                value: _MenuAction.archive,
-                child: Text('Archived items'),
-              ),
-            ],
-          ),
-        ],
       ),
+      drawer: _InventoryDrawer(onMenuSelected: _handleMenu),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: SearchBar(
-              hintText: 'Search name, category, serial, or code',
-              leading: const Icon(Icons.search),
-              onChanged: (value) =>
-                  setState(() => _query = value.trim().toLowerCase()),
-            ),
-          ),
           SizedBox(
             height: 52,
             child: ListView(
@@ -121,26 +129,98 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
           ),
         ],
       ),
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          FloatingActionButton.small(
-            heroTag: 'scan',
-            tooltip: 'Scan to find',
-            onPressed: () => context.push('/scan/find'),
-            child: const Icon(Icons.qr_code_scanner),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: 2,
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.home_outlined), label: 'Home'),
+          NavigationDestination(
+            icon: Icon(Icons.inventory_2_outlined),
+            label: 'Inventory',
           ),
-          const SizedBox(height: 12),
-          FloatingActionButton.extended(
-            heroTag: 'add',
-            onPressed: () => context.push('/item/new'),
-            icon: const Icon(Icons.add),
-            label: const Text('Add item'),
+          NavigationDestination(
+            icon: Icon(Icons.qr_code_scanner),
+            label: 'Scan to find',
           ),
+          NavigationDestination(
+            icon: Icon(Icons.add_box_outlined),
+            label: 'New item',
+          ),
+          NavigationDestination(icon: Icon(Icons.more_horiz), label: 'More'),
         ],
+        onDestinationSelected: _handleNavigation,
       ),
     );
+  }
+
+  void _openSearch() {
+    setState(() => _searchExpanded = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _searchFocusNode.requestFocus();
+    });
+  }
+
+  void _closeSearch() {
+    _searchController.clear();
+    _searchFocusNode.unfocus();
+    setState(() {
+      _query = '';
+      _searchExpanded = false;
+    });
+  }
+
+  void _updateQuery(String value) {
+    setState(() => _query = value.trim().toLowerCase());
+  }
+
+  void _handleNavigation(int index) {
+    switch (index) {
+      case 0:
+      case 1:
+        _searchController.clear();
+        setState(() {
+          _query = '';
+          _type = null;
+          _searchExpanded = false;
+        });
+        return;
+      case 2:
+        context.push('/scan/find');
+        return;
+      case 3:
+        context.push('/item/new');
+        return;
+      case 4:
+        _showMoreMenu();
+        return;
+    }
+  }
+
+  Future<void> _showMoreMenu() async {
+    final box = context.findRenderObject()! as RenderBox;
+    final action = await showMenu<_MenuAction>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        box.size.width - 16,
+        box.size.height - 80,
+        16,
+        80,
+      ),
+      items: const [
+        PopupMenuItem(
+          value: _MenuAction.exportJson,
+          child: Text('Export JSON'),
+        ),
+        PopupMenuItem(
+          value: _MenuAction.exportCsv,
+          child: Text('Export CSV'),
+        ),
+        PopupMenuItem(
+          value: _MenuAction.archive,
+          child: Text('Archived items'),
+        ),
+      ],
+    );
+    if (action != null) await _handleMenu(action);
   }
 
   bool _matches(InventoryItem item) {
@@ -236,5 +316,58 @@ class _ErrorView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(child: Text('Could not load inventory: $error'));
+  }
+}
+
+class _InventoryDrawer extends StatelessWidget {
+  const _InventoryDrawer({required this.onMenuSelected});
+
+  final ValueChanged<_MenuAction> onMenuSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return NavigationDrawer(
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(28, 28, 16, 16),
+          child: Text('Lab inventory'),
+        ),
+        ListTile(
+          leading: const Icon(Icons.home_outlined),
+          title: const Text('Home'),
+          onTap: () => Navigator.pop(context),
+        ),
+        ListTile(
+          leading: const Icon(Icons.inventory_2_outlined),
+          title: const Text('Inventory'),
+          onTap: () => Navigator.pop(context),
+        ),
+        ListTile(
+          leading: const Icon(Icons.qr_code_scanner),
+          title: const Text('Scan to find'),
+          onTap: () {
+            Navigator.pop(context);
+            context.push('/scan/find');
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.add_box_outlined),
+          title: const Text('New inventory item'),
+          onTap: () {
+            Navigator.pop(context);
+            context.push('/item/new');
+          },
+        ),
+        const Divider(),
+        ListTile(
+          leading: const Icon(Icons.archive_outlined),
+          title: const Text('Archived items'),
+          onTap: () {
+            Navigator.pop(context);
+            onMenuSelected(_MenuAction.archive);
+          },
+        ),
+      ],
+    );
   }
 }
