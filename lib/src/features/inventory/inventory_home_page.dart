@@ -14,46 +14,54 @@ class InventoryHomePage extends ConsumerStatefulWidget {
 }
 
 class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
+  final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
+  String _query = '';
+  LabItemType? _type;
+  bool _searchExpanded = false;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final items = ref.watch(activeItemsProvider);
-    final searchState = ref.watch(inventorySearchProvider);
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Lab inventory'),
-        actions: [
-          PopupMenuButton<_MenuAction>(
-            onSelected: _handleMenu,
-            itemBuilder: (context) => const [
-              PopupMenuItem(
-                value: _MenuAction.exportJson,
-                child: Text('Export JSON'),
+        titleSpacing: 0,
+        title: _searchExpanded
+            ? SearchBar(
+                controller: _searchController,
+                focusNode: _searchFocusNode,
+                hintText: 'Search inventory',
+                leading: const Icon(Icons.search),
+                trailing: [
+                  IconButton(
+                    tooltip: 'Close search',
+                    onPressed: _closeSearch,
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+                onChanged: _updateQuery,
+              )
+            : Row(
+                children: [
+                  const Expanded(child: Text('Lab inventory')),
+                  IconButton(
+                    tooltip: 'Search inventory',
+                    onPressed: _openSearch,
+                    icon: const Icon(Icons.search),
+                  ),
+                ],
               ),
-              PopupMenuItem(
-                value: _MenuAction.exportCsv,
-                child: Text('Export CSV'),
-              ),
-              PopupMenuItem(
-                value: _MenuAction.archive,
-                child: Text('Archived items'),
-              ),
-            ],
-          ),
-        ],
       ),
+      drawer: _InventoryDrawer(onMenuSelected: _handleMenu),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: SearchBar(
-              hintText: 'Search name, category, serial, or code',
-              leading: const Icon(Icons.search),
-              onChanged: (value) => ref
-                  .read(inventorySearchProvider.notifier)
-                  .setQuery(value.trim().toLowerCase()),
-            ),
-          ),
           SizedBox(
             height: 52,
             child: ListView(
@@ -64,10 +72,8 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: FilterChip(
                     label: const Text('All'),
-                    selected: searchState.itemType == null,
-                    onSelected: (_) => ref
-                        .read(inventorySearchProvider.notifier)
-                        .setItemType(null),
+                    selected: _type == null,
+                    onSelected: (_) => setState(() => _type = null),
                   ),
                 ),
                 ...LabItemType.values.map(
@@ -75,10 +81,8 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: FilterChip(
                       label: Text(type.label),
-                      selected: searchState.itemType == type,
-                      onSelected: (_) => ref
-                          .read(inventorySearchProvider.notifier)
-                          .setItemType(type),
+                      selected: _type == type,
+                      onSelected: (_) => setState(() => _type = type),
                     ),
                   ),
                 ),
@@ -90,7 +94,7 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (error, stack) => _ErrorView(error: error),
               data: (allItems) {
-                final visible = allItems.where(_matchesSearch).toList();
+                final visible = allItems.where(_matches).toList();
                 if (visible.isEmpty) {
                   return _EmptyInventory(hasFilters: allItems.isNotEmpty);
                 }
@@ -102,24 +106,20 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
                     separatorBuilder: (_, _) => const Divider(height: 1),
                     itemBuilder: (context, index) {
                       final item = visible[index];
-                      final inventoryItem = item.item;
-                      final itemCode = item.codeFor(ItemCodeRole.item);
                       return ListTile(
                         leading: CircleAvatar(
-                          child: Icon(_iconFor(inventoryItem.itemType)),
+                          child: Icon(_iconFor(item.itemType)),
                         ),
-                        title: Text(inventoryItem.name),
+                        title: Text(item.name),
                         subtitle: Text(
-                          '${inventoryItem.itemType.label} · '
-                          '${inventoryItem.category}\n'
-                          '${itemCode?.codeType.label ?? 'Code'}: '
-                          '${itemCode?.value ?? 'Missing'}',
+                          '${item.itemType.label} · ${item.category}\n'
+                          '${item.codeType.label}: ${item.codeValue}',
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
                         isThreeLine: true,
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: () => context.push('/item/${inventoryItem.id}'),
+                        onTap: () => context.push('/item/${item.id}'),
                       );
                     },
                   ),
@@ -129,42 +129,109 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
           ),
         ],
       ),
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          FloatingActionButton.small(
-            heroTag: 'scan',
-            tooltip: 'Scan to find',
-            onPressed: () => context.push('/scan/find'),
-            child: const Icon(Icons.qr_code_scanner),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: 2,
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.home_outlined), label: 'Home'),
+          NavigationDestination(
+            icon: Icon(Icons.inventory_2_outlined),
+            label: 'Inventory',
           ),
-          const SizedBox(height: 12),
-          FloatingActionButton.extended(
-            heroTag: 'add',
-            onPressed: () => context.push('/item/new'),
-            icon: const Icon(Icons.add),
-            label: const Text('Add item'),
+          NavigationDestination(
+            icon: Icon(Icons.qr_code_scanner),
+            label: 'Scan to find',
           ),
+          NavigationDestination(
+            icon: Icon(Icons.add_box_outlined),
+            label: 'New item',
+          ),
+          NavigationDestination(icon: Icon(Icons.more_horiz), label: 'More'),
         ],
+        onDestinationSelected: _handleNavigation,
       ),
     );
   }
 
-  bool _matchesSearch(InventoryEntry entry) {
-    final item = entry.item;
-    final searchState = ref.read(inventorySearchProvider);
+  void _openSearch() {
+    setState(() => _searchExpanded = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _searchFocusNode.requestFocus();
+    });
+  }
 
-    if (searchState.itemType != null && item.itemType != searchState.itemType) {
-      return false;
+  void _closeSearch() {
+    _searchController.clear();
+    _searchFocusNode.unfocus();
+    setState(() {
+      _query = '';
+      _searchExpanded = false;
+    });
+  }
+
+  void _updateQuery(String value) {
+    setState(() => _query = value.trim().toLowerCase());
+  }
+
+  void _handleNavigation(int index) {
+    switch (index) {
+      case 0:
+      case 1:
+        _searchController.clear();
+        setState(() {
+          _query = '';
+          _type = null;
+          _searchExpanded = false;
+        });
+        return;
+      case 2:
+        context.push('/scan/find');
+        return;
+      case 3:
+        context.push('/item/new');
+        return;
+      case 4:
+        _showMoreMenu();
+        return;
     }
-    if (searchState.query.isEmpty) return true;
+  }
+
+  Future<void> _showMoreMenu() async {
+    final box = context.findRenderObject()! as RenderBox;
+    final action = await showMenu<_MenuAction>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        box.size.width - 16,
+        box.size.height - 80,
+        16,
+        80,
+      ),
+      items: const [
+        PopupMenuItem(
+          value: _MenuAction.exportJson,
+          child: Text('Export JSON'),
+        ),
+        PopupMenuItem(
+          value: _MenuAction.exportCsv,
+          child: Text('Export CSV'),
+        ),
+        PopupMenuItem(
+          value: _MenuAction.archive,
+          child: Text('Archived items'),
+        ),
+      ],
+    );
+    if (action != null) await _handleMenu(action);
+  }
+
+  bool _matches(InventoryItem item) {
+    if (_type != null && item.itemType != _type) return false;
+    if (_query.isEmpty) return true;
     return [
       item.name,
       item.category,
       item.serialNumber ?? '',
-      ...entry.codes.map((code) => code.value),
-    ].any((value) => value.toLowerCase().contains(searchState.query));
+      item.codeValue,
+    ].any((value) => value.toLowerCase().contains(_query));
   }
 
   Future<void> _handleMenu(_MenuAction action) async {
@@ -249,5 +316,58 @@ class _ErrorView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(child: Text('Could not load inventory: $error'));
+  }
+}
+
+class _InventoryDrawer extends StatelessWidget {
+  const _InventoryDrawer({required this.onMenuSelected});
+
+  final ValueChanged<_MenuAction> onMenuSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return NavigationDrawer(
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(28, 28, 16, 16),
+          child: Text('Lab inventory'),
+        ),
+        ListTile(
+          leading: const Icon(Icons.home_outlined),
+          title: const Text('Home'),
+          onTap: () => Navigator.pop(context),
+        ),
+        ListTile(
+          leading: const Icon(Icons.inventory_2_outlined),
+          title: const Text('Inventory'),
+          onTap: () => Navigator.pop(context),
+        ),
+        ListTile(
+          leading: const Icon(Icons.qr_code_scanner),
+          title: const Text('Scan to find'),
+          onTap: () {
+            Navigator.pop(context);
+            context.push('/scan/find');
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.add_box_outlined),
+          title: const Text('New inventory item'),
+          onTap: () {
+            Navigator.pop(context);
+            context.push('/item/new');
+          },
+        ),
+        const Divider(),
+        ListTile(
+          leading: const Icon(Icons.archive_outlined),
+          title: const Text('Archived items'),
+          onTap: () {
+            Navigator.pop(context);
+            onMenuSelected(_MenuAction.archive);
+          },
+        ),
+      ],
+    );
   }
 }
