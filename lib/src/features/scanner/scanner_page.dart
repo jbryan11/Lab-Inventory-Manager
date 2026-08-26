@@ -5,6 +5,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../domain/inventory_enums.dart';
 import '../../providers.dart';
+import 'barcode_classifier.dart';
 import 'code_parser.dart';
 import '../../widgets/home_back_button.dart';
 
@@ -42,9 +43,6 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
   _CapturedCode? _package1P;
   _CapturedCode? _package1T;
   String? _message;
-  // Holds a barcode captured when we need the user to confirm its role
-  // (single unclassified code, no positional info).
-  _CapturedCode? _pendingPackageCode;
 
   @override
   void dispose() {
@@ -153,7 +151,6 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
                     _configuration = selection.single;
                     _package1P = null;
                     _package1T = null;
-                    _pendingPackageCode = null;
                     _message = null;
                   });
                 },
@@ -207,161 +204,87 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
 
   Future<void> _onDetect(BarcodeCapture capture) async {
     if (_handling) return;
-    final detected = capture.barcodes
-        .map(
-          (barcode) =>
-              (barcode: barcode, parsed: parseScannedCode(barcode.rawValue)),
-        )
-        .where((entry) => entry.parsed != null)
-        .toList();
-    if (detected.isEmpty) return;
+    final classified = BarcodeClassifier.classify(capture);
+    if (classified.isEmpty) return;
 
     if (widget.mode == ScanMode.create &&
         _configuration == ItemCodeConfiguration.packageAndItem &&
         _package1P == null) {
-      // --- Determine 1P / 1T roles ---
-      // Strategy 1: classifier embedded in raw value (GS1-128 etc.)
-      final classified1P = detected
-          .where((e) => e.parsed!.role == ItemCodeRole.package1P)
-          .firstOrNull;
-      final classified1T = detected
-          .where((e) => e.parsed!.role == ItemCodeRole.package1T)
-          .firstOrNull;
+      await _handlePackageCapture(classified);
+      return;
+    }
 
-      if (classified1P != null && classified1T != null) {
-        // Both roles identified from embedded classifiers — accept immediately.
-        _handling = true;
-        _package1P = _CapturedCode(
-          value: classified1P.parsed!.value,
-          type: _mapFormat(classified1P.barcode.format),
-        );
-        _package1T = _CapturedCode(
-          value: classified1T.parsed!.value,
-          type: _mapFormat(classified1T.barcode.format),
-        );
-        setState(() {
-          _message = 'Package captured. Now scan the code on the item.';
-          _handling = false;
-        });
-        return;
-      }
+    await _handleItemCapture(classified);
+  }
 
-      // Strategy 2: two unclassified barcodes in one frame — use vertical
-      // position (top = 1P, bottom = 1T), matching the standard label layout.
-      final unclassified = detected
-          .where((e) => e.parsed!.role == null)
-          .toList();
+  /// Handles package code capture (1P/1T role assignment).
+  Future<void> _handlePackageCapture(List<ClassifiedBarcode> classified) async {
+    final classified1P =
+        classified.where((e) => e.parsed!.role == ItemCodeRole.package1P).firstOrNull;
+    final classified1T =
+        classified.where((e) => e.parsed!.role == ItemCodeRole.package1T).firstOrNull;
+    final unclassified =
+        classified.where((e) => e.parsed!.role == null).toList();
 
-      if (unclassified.length >= 2) {
-        // Sort by Y centre of the bounding box so top barcode → 1P.
-        unclassified.sort((a, b) {
-          final ay = _barcodeY(a.barcode);
-          final by = _barcodeY(b.barcode);
-          if (ay == null && by == null) return 0;
-          if (ay == null) return 1;
-          if (by == null) return -1;
-          return ay.compareTo(by);
-        });
-        _handling = true;
-        _package1P = _CapturedCode(
-          value: unclassified[0].parsed!.value,
-          type: _mapFormat(unclassified[0].barcode.format),
-        );
-        _package1T = _CapturedCode(
-          value: unclassified[1].parsed!.value,
-          type: _mapFormat(unclassified[1].barcode.format),
-        );
-        setState(() {
-          _message =
-              'Package captured (top→1P, bottom→1T). '
-              'Now scan the code on the item.';
-          _handling = false;
-        });
-        return;
-      }
+    // Try to resolve 1P and 1T from classifiers and/or position.
+    final resolved = BarcodeClassifier.resolveMixedRoles(
+      classified1P,
+      classified1T,
+      unclassified,
+    );
 
-      // Strategy 3: exactly one unclassified barcode — ask the user which role.
-      if (unclassified.length == 1) {
-        final candidate = unclassified.first;
-        final already1P =
-            classified1P != null ||
-            (_pendingPackageCode != null &&
-                _pendingPackageCode!.value == candidate.parsed!.value);
-        if (!already1P) {
-          setState(() {
-            _message =
-                'Scanning… keep both 1P and 1T barcodes in the frame together.';
-          });
-          return;
-        }
-      }
-
-      // Strategy 4: one role known from classifier, one unknown from position.
-      if (classified1P != null && unclassified.length == 1) {
-        _handling = true;
-        _package1P = _CapturedCode(
-          value: classified1P.parsed!.value,
-          type: _mapFormat(classified1P.barcode.format),
-        );
-        _package1T = _CapturedCode(
-          value: unclassified.first.parsed!.value,
-          type: _mapFormat(unclassified.first.barcode.format),
-        );
-        setState(() {
-          _message = 'Package captured. Now scan the code on the item.';
-          _handling = false;
-        });
-        return;
-      }
-      if (classified1T != null && unclassified.length == 1) {
-        _handling = true;
-        _package1P = _CapturedCode(
-          value: unclassified.first.parsed!.value,
-          type: _mapFormat(unclassified.first.barcode.format),
-        );
-        _package1T = _CapturedCode(
-          value: classified1T.parsed!.value,
-          type: _mapFormat(classified1T.barcode.format),
-        );
-        setState(() {
-          _message = 'Package captured. Now scan the code on the item.';
-          _handling = false;
-        });
-        return;
-      }
-
+    if (resolved != null) {
+      _handling = true;
+      _package1P = _CapturedCode(
+        value: resolved.package1P.parsed!.value,
+        type: _mapFormat(resolved.package1P.barcode.format),
+      );
+      _package1T = _CapturedCode(
+        value: resolved.package1T.parsed!.value,
+        type: _mapFormat(resolved.package1T.barcode.format),
+      );
       setState(() {
-        _message = 'Keep both the 1P and 1T barcodes visible in one frame.';
+        _message = 'Package captured. Now scan the code on the item.';
+        _handling = false;
       });
       return;
     }
 
-    final itemCandidates =
-        widget.mode == ScanMode.create &&
+    // Unable to resolve roles.
+    setState(() {
+      _message = 'Keep both the 1P and 1T barcodes visible in one frame.';
+    });
+  }
+
+  /// Handles item code capture (find or create mode).
+  Future<void> _handleItemCapture(List<ClassifiedBarcode> classified) async {
+    // Filter out package codes if in package+item mode.
+    final itemCandidates = widget.mode == ScanMode.create &&
             _configuration == ItemCodeConfiguration.packageAndItem
-        ? detected
-              .where(
-                (entry) =>
-                    entry.parsed!.value != _package1P!.value &&
-                    entry.parsed!.value != _package1T!.value,
-              )
-              .toList()
-        : detected;
+        ? classified
+            .where(
+              (e) =>
+                  e.parsed!.value != _package1P?.value &&
+                  e.parsed!.value != _package1T?.value,
+            )
+            .toList()
+        : classified;
+
     if (itemCandidates.isEmpty) {
       setState(() {
         _message = 'Move the package away, then scan the code on the item.';
       });
       return;
     }
+
     final entry = itemCandidates.first;
     final barcode = entry.barcode;
     _handling = true;
     await _controller.stop();
 
     final rawValue = barcode.rawValue!.trim();
-    final value = widget.mode == ScanMode.create
-        ? rawValue
-        : entry.parsed!.value;
+    final value =
+        widget.mode == ScanMode.create ? rawValue : entry.parsed!.value;
     final database = ref.read(inventoryDatabaseProvider);
     var item = await database.itemByCode(value);
     if (item == null && rawValue != value) {
@@ -372,32 +295,7 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
     final foundItem = item;
     if (foundItem != null) {
       if (foundItem.item.isArchived) {
-        final restore = await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Archived item'),
-            content: Text('${foundItem.item.name} is archived. Restore it?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Restore'),
-              ),
-            ],
-          ),
-        );
-        if (restore == true) {
-          await ref
-              .read(inventoryDatabaseProvider)
-              .setArchived(foundItem.item.id, archived: false);
-          ref.invalidate(activeItemsProvider);
-          if (mounted) context.go('/item/${foundItem.item.id}');
-          return;
-        }
-        await _resume();
+        await _handleArchivedItem(foundItem);
         return;
       }
       context.go('/item/${foundItem.item.id}');
@@ -410,6 +308,41 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
       return;
     }
 
+    await _handleNotFound(value);
+  }
+
+  /// Handles finding an archived item; prompts to restore.
+  Future<void> _handleArchivedItem(InventoryEntry item) async {
+    final restore = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Archived item'),
+        content: Text('${item.item.name} is archived. Restore it?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Restore'),
+          ),
+        ],
+      ),
+    );
+    if (restore == true) {
+      await ref
+          .read(inventoryDatabaseProvider)
+          .setArchived(item.item.id, archived: false);
+      ref.invalidate(activeItemsProvider);
+      if (mounted) context.go('/item/${item.item.id}');
+      return;
+    }
+    await _resume();
+  }
+
+  /// Handles item not found in find mode; prompts to create.
+  Future<void> _handleNotFound(String value) async {
     final create = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -428,7 +361,7 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
       ),
     );
     if (create == true) {
-      _openCreate(value, type);
+      _openCreate(value, ItemCodeType.unknown);
     } else {
       await _resume();
     }
@@ -473,15 +406,6 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
     if (!mounted) return;
     _handling = false;
     await _controller.start();
-  }
-
-  /// Returns the vertical centre of a barcode's bounding box (0.0 = top).
-  /// Returns null if positional data is unavailable.
-  double? _barcodeY(Barcode barcode) {
-    final corners = barcode.corners;
-    if (corners.isEmpty) return null;
-    final totalY = corners.fold<double>(0, (sum, p) => sum + p.dy);
-    return totalY / corners.length;
   }
 
   ItemCodeType _mapFormat(BarcodeFormat format) => switch (format) {

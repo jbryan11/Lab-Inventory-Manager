@@ -109,6 +109,43 @@ class InventoryDatabase extends _$InventoryDatabase {
     return query.get().then(_groupEntries);
   }
 
+  /// Searches items by name, category, serial, or code.
+  ///
+  /// Returns all items matching the search query and optional type filter.
+  /// Query is case-insensitive and searched in name, category, serial number,
+  /// and all code values.
+  Future<List<InventoryEntry>> searchItems({
+    required bool archived,
+    required String query,
+    ItemCodeType? codeType,
+  }) async {
+    if (query.isEmpty && codeType == null) {
+      return watchItems(archived: archived).first;
+    }
+
+    final entries = await watchItems(archived: archived).first;
+    final normalized = query.toLowerCase();
+
+    return entries.where((entry) {
+      final item = entry.item;
+
+      // Filter by type if specified
+      if (codeType != null) {
+        if (item.itemType.name != codeType.name) return false;
+      }
+
+      // Match query in any field
+      if (normalized.isEmpty) return true;
+
+      return [
+        item.name,
+        item.category,
+        item.serialNumber ?? '',
+        ...entry.codes.map((code) => code.value),
+      ].any((value) => value.toLowerCase().contains(normalized));
+    }).toList();
+  }
+
   Future<InventoryEntry?> itemById(String id) async {
     final item = await (select(
       inventoryItems,

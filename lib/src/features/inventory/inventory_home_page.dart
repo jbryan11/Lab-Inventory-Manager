@@ -14,12 +14,11 @@ class InventoryHomePage extends ConsumerStatefulWidget {
 }
 
 class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
-  String _query = '';
-  LabItemType? _type;
-
   @override
   Widget build(BuildContext context) {
     final items = ref.watch(activeItemsProvider);
+    final searchState = ref.watch(inventorySearchProvider);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Lab inventory'),
@@ -50,8 +49,9 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
             child: SearchBar(
               hintText: 'Search name, category, serial, or code',
               leading: const Icon(Icons.search),
-              onChanged: (value) =>
-                  setState(() => _query = value.trim().toLowerCase()),
+              onChanged: (value) => ref
+                  .read(inventorySearchProvider.notifier)
+                  .setQuery(value.trim().toLowerCase()),
             ),
           ),
           SizedBox(
@@ -64,8 +64,10 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: FilterChip(
                     label: const Text('All'),
-                    selected: _type == null,
-                    onSelected: (_) => setState(() => _type = null),
+                    selected: searchState.itemType == null,
+                    onSelected: (_) => ref
+                        .read(inventorySearchProvider.notifier)
+                        .setItemType(null),
                   ),
                 ),
                 ...LabItemType.values.map(
@@ -73,8 +75,10 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: FilterChip(
                       label: Text(type.label),
-                      selected: _type == type,
-                      onSelected: (_) => setState(() => _type = type),
+                      selected: searchState.itemType == type,
+                      onSelected: (_) => ref
+                          .read(inventorySearchProvider.notifier)
+                          .setItemType(type),
                     ),
                   ),
                 ),
@@ -86,7 +90,7 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (error, stack) => _ErrorView(error: error),
               data: (allItems) {
-                final visible = allItems.where(_matches).toList();
+                final visible = allItems.where(_matchesSearch).toList();
                 if (visible.isEmpty) {
                   return _EmptyInventory(hasFilters: allItems.isNotEmpty);
                 }
@@ -147,16 +151,20 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
     );
   }
 
-  bool _matches(InventoryEntry entry) {
+  bool _matchesSearch(InventoryEntry entry) {
     final item = entry.item;
-    if (_type != null && item.itemType != _type) return false;
-    if (_query.isEmpty) return true;
+    final searchState = ref.read(inventorySearchProvider);
+
+    if (searchState.itemType != null && item.itemType != searchState.itemType) {
+      return false;
+    }
+    if (searchState.query.isEmpty) return true;
     return [
       item.name,
       item.category,
       item.serialNumber ?? '',
       ...entry.codes.map((code) => code.value),
-    ].any((value) => value.toLowerCase().contains(_query));
+    ].any((value) => value.toLowerCase().contains(searchState.query));
   }
 
   Future<void> _handleMenu(_MenuAction action) async {
