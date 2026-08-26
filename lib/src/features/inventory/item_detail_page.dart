@@ -12,6 +12,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../data/inventory_database.dart';
 import '../../domain/inventory_enums.dart';
 import '../../providers.dart';
+import '../../widgets/home_back_button.dart';
 import 'item_label.dart';
 
 class ItemDetailPage extends ConsumerStatefulWidget {
@@ -32,6 +33,7 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
     final item = ref.watch(itemProvider(widget.itemId));
     return Scaffold(
       appBar: AppBar(
+        leading: const HomeBackButton(),
         title: const Text('Item details'),
         actions: [
           IconButton(
@@ -58,7 +60,8 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
     );
   }
 
-  Widget _buildDetails(InventoryItem item) {
+  Widget _buildDetails(InventoryEntry entry) {
+    final item = entry.item;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -68,13 +71,12 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
         _DetailRow(label: 'Category', value: item.category),
         if (item.serialNumber != null)
           _DetailRow(label: 'Serial number', value: item.serialNumber!),
-        _DetailRow(label: 'Code type', value: item.codeType.label),
-        _DetailRow(label: 'Code value', value: item.codeValue),
-        _DetailRow(
-          label: 'Code source',
-          value: item.codeSource == ItemCodeSource.generated
-              ? 'Generated'
-              : 'Scanned / entered',
+        _DetailRow(label: 'Code setup', value: item.codeConfiguration.label),
+        ...entry.codes.map(
+          (code) => _DetailRow(
+            label: code.role.label,
+            value: '${code.value} (${code.codeType.label})',
+          ),
         ),
         const SizedBox(height: 24),
         Text('Printable label', style: Theme.of(context).textTheme.titleMedium),
@@ -83,12 +85,12 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
           clipBehavior: Clip.antiAlias,
           child: RepaintBoundary(
             key: _labelKey,
-            child: ItemLabel(item: item),
+            child: ItemLabel(item: entry),
           ),
         ),
         const SizedBox(height: 12),
         FilledButton.tonalIcon(
-          onPressed: _savingLabel ? null : () => _saveLabel(item),
+          onPressed: _savingLabel ? null : () => _saveLabel(entry),
           icon: const Icon(Icons.image_outlined),
           label: Text(_savingLabel ? 'Saving...' : 'Save / share label image'),
         ),
@@ -97,7 +99,7 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
           style: OutlinedButton.styleFrom(
             foregroundColor: Theme.of(context).colorScheme.error,
           ),
-          onPressed: () => _archive(item),
+          onPressed: () => _archive(entry),
           icon: const Icon(Icons.archive_outlined),
           label: const Text('Archive item'),
         ),
@@ -105,7 +107,8 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
     );
   }
 
-  Future<void> _saveLabel(InventoryItem item) async {
+  Future<void> _saveLabel(InventoryEntry entry) async {
+    final item = entry.item;
     setState(() => _savingLabel = true);
     try {
       final boundary =
@@ -132,7 +135,8 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
     }
   }
 
-  Future<void> _archive(InventoryItem item) async {
+  Future<void> _archive(InventoryEntry entry) async {
+    final item = entry.item;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(

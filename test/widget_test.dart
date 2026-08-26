@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lab_inventory_manager/src/app.dart';
+import 'package:lab_inventory_manager/src/domain/inventory_enums.dart';
 import 'package:lab_inventory_manager/src/features/inventory/item_form_page.dart';
 import 'package:lab_inventory_manager/src/providers.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -52,7 +53,7 @@ void main() {
         overrides: [
           activeItemsProvider.overrideWith((ref) => Stream.value(const [])),
         ],
-        child: const MaterialApp(home: ItemFormPage()),
+        child: const MaterialApp(home: ItemFormPage(packageMode: true)),
       ),
     );
     await tester.pumpAndSettle();
@@ -62,5 +63,16 @@ void main() {
     await tester.pump();
 
     expect(find.byType(QrImageView), findsOneWidget);
+    expect(
+      find.text(ItemCodeConfiguration.packageAndItem.label),
+      findsOneWidget,
+    );
+    expect(find.text('Package 1P value'), findsOneWidget);
+    await tester.drag(find.byType(ListView), const Offset(0, -400));
+    await tester.pumpAndSettle();
+    expect(find.text('Package 1T value'), findsOneWidget);
+    await tester.drag(find.byType(ListView), const Offset(0, -400));
+    await tester.pumpAndSettle();
+    expect(find.text('Barcode / QR value'), findsOneWidget);
   });
 }

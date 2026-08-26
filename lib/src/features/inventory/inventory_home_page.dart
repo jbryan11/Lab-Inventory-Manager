@@ -106,20 +106,24 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
                     separatorBuilder: (_, _) => const Divider(height: 1),
                     itemBuilder: (context, index) {
                       final item = visible[index];
+                      final inventoryItem = item.item;
+                      final itemCode = item.codeFor(ItemCodeRole.item);
                       return ListTile(
                         leading: CircleAvatar(
-                          child: Icon(_iconFor(item.itemType)),
+                          child: Icon(_iconFor(inventoryItem.itemType)),
                         ),
-                        title: Text(item.name),
+                        title: Text(inventoryItem.name),
                         subtitle: Text(
-                          '${item.itemType.label} · ${item.category}\n'
-                          '${item.codeType.label}: ${item.codeValue}',
+                          '${inventoryItem.itemType.label} · '
+                          '${inventoryItem.category}\n'
+                          '${itemCode?.codeType.label ?? 'Code'}: '
+                          '${itemCode?.value ?? 'Missing'}',
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
                         isThreeLine: true,
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: () => context.push('/item/${item.id}'),
+                        onTap: () => context.push('/item/${inventoryItem.id}'),
                       );
                     },
                   ),
@@ -223,14 +227,15 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
     if (action != null) await _handleMenu(action);
   }
 
-  bool _matches(InventoryItem item) {
+  bool _matches(InventoryEntry entry) {
+    final item = entry.item;
     if (_type != null && item.itemType != _type) return false;
     if (_query.isEmpty) return true;
     return [
       item.name,
       item.category,
       item.serialNumber ?? '',
-      item.codeValue,
+      ...entry.codes.map((code) => code.value),
     ].any((value) => value.toLowerCase().contains(_query));
   }
 

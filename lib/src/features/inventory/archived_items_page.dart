@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/inventory_enums.dart';
 import '../../providers.dart';
+import '../../widgets/home_back_button.dart';
 
 class ArchivedItemsPage extends ConsumerWidget {
   const ArchivedItemsPage({super.key});
@@ -11,7 +12,10 @@ class ArchivedItemsPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final items = ref.watch(archivedItemsProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Archived items')),
+      appBar: AppBar(
+        leading: const HomeBackButton(),
+        title: const Text('Archived items'),
+      ),
       body: items.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, stack) =>
@@ -25,15 +29,18 @@ class ArchivedItemsPage extends ConsumerWidget {
             separatorBuilder: (_, _) => const Divider(height: 1),
             itemBuilder: (context, index) {
               final item = archived[index];
+              final inventoryItem = item.item;
               return ListTile(
                 leading: const Icon(Icons.archive_outlined),
-                title: Text(item.name),
-                subtitle: Text('${item.itemType.label} · ${item.category}'),
+                title: Text(inventoryItem.name),
+                subtitle: Text(
+                  '${inventoryItem.itemType.label} · ${inventoryItem.category}',
+                ),
                 trailing: TextButton(
                   onPressed: () async {
                     await ref
                         .read(inventoryDatabaseProvider)
-                        .setArchived(item.id, archived: false);
+                        .setArchived(inventoryItem.id, archived: false);
                     ref.invalidate(activeItemsProvider);
                   },
                   child: const Text('Restore'),
