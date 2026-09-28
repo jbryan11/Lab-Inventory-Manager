@@ -12,9 +12,14 @@ import '../data/inventory_database.dart';
 import '../domain/inventory_enums.dart';
 
 class ExportService {
-  ExportService(this._database);
+  ExportService(
+    this._database, {
+    Future<Directory> Function()? documentsDirectory,
+  }) : _documentsDirectory =
+           documentsDirectory ?? getApplicationDocumentsDirectory;
 
   final InventoryDatabase _database;
+  final Future<Directory> Function() _documentsDirectory;
 
   Future<File> exportJson() async {
     try {
@@ -168,7 +173,7 @@ class ExportService {
   Future<File> _writeExport(String name, String contents) async {
     try {
       AppLogger.debug('Writing export file: $name');
-      final documents = await getApplicationDocumentsDirectory();
+      final documents = await _documentsDirectory();
       final directory = Directory(p.join(documents.path, 'exports'));
       await directory.create(recursive: true);
       final file = File(p.join(directory.path, name));
