@@ -198,7 +198,7 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
         await _resume();
         return;
       }
-      context.go('/item/${entry.item.id}');
+      if (mounted) context.go('/item/${entry.item.id}');
       return;
     }
 
@@ -271,7 +271,8 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
         ),
       );
 
-      if (shouldProceed == true && mounted) {
+      if (!mounted) return;
+      if (shouldProceed == true) {
         context.go('/item/${entry1P.item.id}');
         return;
       }
@@ -281,17 +282,19 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
 
     // If only one barcode found, process it
     if (entry1P != null) {
-      context.go('/item/${entry1P.item.id}');
+      if (mounted) context.go('/item/${entry1P.item.id}');
       return;
     }
     if (entry1T != null) {
-      context.go('/item/${entry1T.item.id}');
+      if (mounted) context.go('/item/${entry1T.item.id}');
       return;
     }
 
     // Neither barcode found - offer to create
     if (widget.mode == ScanMode.create) {
-      _openCreate(package1P.parsed.value, _mapFormat(package1P.barcode.format));
+      if (mounted) {
+        _openCreate(package1P.parsed.value, _mapFormat(package1P.barcode.format));
+      }
       return;
     }
 
@@ -312,6 +315,7 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
         ],
       ),
     );
+    if (!mounted) return;
     if (create == true) {
       _openCreate(package1P.parsed.value, _mapFormat(package1P.barcode.format));
     } else {
@@ -320,6 +324,7 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
   }
 
   void _openCreate(String value, ItemCodeType type) {
+    if (!mounted) return;
     final uri = Uri(
       path: '/item/new',
       queryParameters: {'code': value, 'codeType': type.name},
