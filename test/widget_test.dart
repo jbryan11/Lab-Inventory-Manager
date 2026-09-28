@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lab_inventory_manager/src/app.dart';
+import 'package:lab_inventory_manager/src/features/inventory/inventory_home_page.dart';
 import 'package:lab_inventory_manager/src/features/inventory/item_form_page.dart';
 import 'package:lab_inventory_manager/src/providers.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -44,6 +45,37 @@ void main() {
 
     expect(find.text('Search inventory'), findsOneWidget);
     expect(find.byTooltip('Close search'), findsOneWidget);
+  });
+
+  testWidgets('keeps inventory search state when the page is rebuilt', (
+    tester,
+  ) async {
+    final container = ProviderContainer(
+      overrides: [
+        activeItemsProvider.overrideWith((ref) => Stream.value(const [])),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    Widget app(Widget home) => UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(home: home),
+    );
+
+    await tester.pumpWidget(app(const InventoryHomePage()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Search inventory'));
+    await tester.pump();
+    await tester.enterText(find.byType(SearchBar), 'meter');
+    await tester.pump();
+
+    await tester.pumpWidget(app(const SizedBox()));
+    await tester.pump();
+    await tester.pumpWidget(app(const InventoryHomePage()));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Close search'), findsOneWidget);
+    expect(find.text('meter'), findsOneWidget);
   });
 
   testWidgets('shows JSON import in the inventory menu', (tester) async {

@@ -5,64 +5,61 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../data/inventory_database.dart';
 import '../../domain/inventory_enums.dart';
 import '../../providers.dart';
 
-class InventoryHomePage extends ConsumerStatefulWidget {
+class InventoryHomePage extends ConsumerWidget {
   const InventoryHomePage({super.key});
 
   @override
-  ConsumerState<InventoryHomePage> createState() => _InventoryHomePageState();
-}
-
-class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
-  final _searchController = TextEditingController();
-  final _searchFocusNode = FocusNode();
-  String _query = '';
-  LabItemType? _type;
-  bool _searchExpanded = false;
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    _searchFocusNode.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final items = ref.watch(activeItemsProvider);
+  Widget build(BuildContext context, WidgetRef ref) {
+    final search = ref.watch(inventorySearchProvider);
+    final searchController = ref.watch(inventorySearchControllerProvider);
+    final searchFocusNode = ref.watch(inventorySearchFocusNodeProvider);
+    final items = ref.watch(filteredInventoryProvider);
+    ref.listen(inventorySearchProvider.select((state) => state.query), (
+      previous,
+      query,
+    ) {
+      if (searchController.text != query) {
+        searchController.value = TextEditingValue(
+          text: query,
+          selection: TextSelection.collapsed(offset: query.length),
+        );
+      }
+    });
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
-        title: _searchExpanded
+        title: search.isExpanded
             ? SearchBar(
-                controller: _searchController,
-                focusNode: _searchFocusNode,
+                controller: searchController,
+                focusNode: searchFocusNode,
                 hintText: 'Search inventory',
                 leading: const Icon(Icons.search),
                 trailing: [
                   IconButton(
                     tooltip: 'Close search',
-                    onPressed: _closeSearch,
+                    onPressed: () => _closeSearch(ref),
                     icon: const Icon(Icons.close),
                   ),
                 ],
-                onChanged: _updateQuery,
+                onChanged: ref.read(inventorySearchProvider.notifier).setQuery,
               )
             : Row(
                 children: [
                   const Expanded(child: Text('Lab inventory')),
                   IconButton(
                     tooltip: 'Search inventory',
-                    onPressed: _openSearch,
+                    onPressed: () => _openSearch(context, ref),
                     icon: const Icon(Icons.search),
                   ),
                 ],
               ),
       ),
-      drawer: _InventoryDrawer(onMenuSelected: _handleMenu),
+      drawer: _InventoryDrawer(
+        onMenuSelected: (action) => _handleMenu(context, ref, action),
+      ),
       body: Column(
         children: [
           SizedBox(
@@ -75,8 +72,10 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: FilterChip(
                     label: const Text('All'),
-                    selected: _type == null,
-                    onSelected: (_) => setState(() => _type = null),
+                    selected: search.itemType == null,
+                    onSelected: (_) => ref
+                        .read(inventorySearchProvider.notifier)
+                        .setItemType(null),
                   ),
                 ),
                 ...LabItemType.values.map(
@@ -84,8 +83,10 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: FilterChip(
                       label: Text(type.label),
-                      selected: _type == type,
-                      onSelected: (_) => setState(() => _type = type),
+                      selected: search.itemType == type,
+                      onSelected: (_) => ref
+                          .read(inventorySearchProvider.notifier)
+                          .setItemType(type),
                     ),
                   ),
                 ),
@@ -96,10 +97,9 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
             child: items.when(
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (error, stack) => _ErrorView(error: error),
-              data: (allItems) {
-                final visible = allItems.where(_matches).toList();
+              data: (visible) {
                 if (visible.isEmpty) {
-                  return _EmptyInventory(hasFilters: allItems.isNotEmpty);
+                  return _EmptyInventory(hasFilters: search.hasFilters);
                 }
                 return RefreshIndicator(
                   onRefresh: () async => ref.invalidate(activeItemsProvider),
@@ -152,41 +152,32 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
           ),
           NavigationDestination(icon: Icon(Icons.more_horiz), label: 'More'),
         ],
-        onDestinationSelected: _handleNavigation,
+        onDestinationSelected: (index) =>
+            _handleNavigation(context, ref, index),
       ),
     );
   }
 
-  void _openSearch() {
-    setState(() => _searchExpanded = true);
+  void _openSearch(BuildContext context, WidgetRef ref) {
+    final focusNode = ref.read(inventorySearchFocusNodeProvider);
+    ref.read(inventorySearchProvider.notifier).openSearch();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _searchFocusNode.requestFocus();
+      if (context.mounted) focusNode.requestFocus();
     });
   }
 
-  void _closeSearch() {
-    _searchController.clear();
-    _searchFocusNode.unfocus();
-    setState(() {
-      _query = '';
-      _searchExpanded = false;
-    });
+  void _closeSearch(WidgetRef ref) {
+    ref.read(inventorySearchControllerProvider).clear();
+    ref.read(inventorySearchFocusNodeProvider).unfocus();
+    ref.read(inventorySearchProvider.notifier).closeSearch();
   }
 
-  void _updateQuery(String value) {
-    setState(() => _query = value.trim().toLowerCase());
-  }
-
-  void _handleNavigation(int index) {
+  void _handleNavigation(BuildContext context, WidgetRef ref, int index) {
     switch (index) {
       case 0:
       case 1:
-        _searchController.clear();
-        setState(() {
-          _query = '';
-          _type = null;
-          _searchExpanded = false;
-        });
+        ref.read(inventorySearchControllerProvider).clear();
+        ref.read(inventorySearchProvider.notifier).reset();
         return;
       case 2:
         context.push('/scan/find');
@@ -195,12 +186,12 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
         context.push('/item/new');
         return;
       case 4:
-        _showMoreMenu();
+        _showMoreMenu(context, ref);
         return;
     }
   }
 
-  Future<void> _showMoreMenu() async {
+  Future<void> _showMoreMenu(BuildContext context, WidgetRef ref) async {
     final box = context.findRenderObject()! as RenderBox;
     final action = await showMenu<_MenuAction>(
       context: context,
@@ -226,28 +217,22 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
         ),
       ],
     );
-    if (action != null) await _handleMenu(action);
+    if (action != null && context.mounted) {
+      await _handleMenu(context, ref, action);
+    }
   }
 
-  bool _matches(InventoryEntry entry) {
-    if (_type != null && entry.item.itemType != _type) return false;
-    if (_query.isEmpty) return true;
-    final codeValue = entry.codeFor(ItemCodeRole.item)?.value ?? '';
-    return [
-      entry.item.name,
-      entry.item.category,
-      entry.item.serialNumber ?? '',
-      codeValue,
-    ].any((value) => value.toLowerCase().contains(_query));
-  }
-
-  Future<void> _handleMenu(_MenuAction action) async {
+  Future<void> _handleMenu(
+    BuildContext context,
+    WidgetRef ref,
+    _MenuAction action,
+  ) async {
     if (action == _MenuAction.archive) {
       await context.push('/archive');
       return;
     }
     if (action == _MenuAction.importJson) {
-      await _importJson();
+      await _importJson(context, ref);
       return;
     }
     try {
@@ -255,22 +240,22 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
       final file = action == _MenuAction.exportJson
           ? await service.exportJson()
           : await service.exportCsv();
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Export saved to ${file.path}')));
       await service.share(file);
     } catch (error) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Export failed: $error')));
     }
   }
 
-  Future<void> _importJson() async {
-    final selection = await _pickJsonFile();
+  Future<void> _importJson(BuildContext context, WidgetRef ref) async {
+    final selection = await _pickJsonFile(context);
     final path = selection?.path;
-    if (path == null || !mounted) return;
+    if (path == null || !context.mounted) return;
 
     showDialog<void>(
       context: context,
@@ -292,7 +277,7 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
     final result = await ref
         .read(jsonImporterProvider)
         .importFromFile(File(path));
-    if (!mounted) return;
+    if (!context.mounted) return;
     Navigator.of(context, rootNavigator: true).pop();
 
     final message = result.success
@@ -312,14 +297,14 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
     );
   }
 
-  Future<PlatformFile?> _pickJsonFile() async {
+  Future<PlatformFile?> _pickJsonFile(BuildContext context) async {
     try {
       return await FilePicker.pickFile(
         type: FileType.custom,
         allowedExtensions: const ['json'],
       );
     } catch (error) {
-      if (mounted) {
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Could not open the file picker: $error')),
         );

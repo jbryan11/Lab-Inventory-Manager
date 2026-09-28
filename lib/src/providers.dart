@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'data/inventory_database.dart';
@@ -21,15 +22,33 @@ final archivedItemsProvider = StreamProvider<List<InventoryEntry>>((ref) {
 
 /// State for inventory search/filtering.
 class InventorySearchState {
-  const InventorySearchState({required this.query, required this.itemType});
+  const InventorySearchState({
+    required this.query,
+    required this.itemType,
+    required this.isExpanded,
+  });
+
+  const InventorySearchState.initial()
+    : query = '',
+      itemType = null,
+      isExpanded = false;
 
   final String query;
   final LabItemType? itemType;
+  final bool isExpanded;
 
-  InventorySearchState copyWith({String? query, LabItemType? itemType}) {
+  bool get hasFilters => query.trim().isNotEmpty || itemType != null;
+
+  InventorySearchState copyWith({
+    String? query,
+    LabItemType? itemType,
+    bool clearItemType = false,
+    bool? isExpanded,
+  }) {
     return InventorySearchState(
       query: query ?? this.query,
-      itemType: itemType ?? this.itemType,
+      itemType: clearItemType ? null : itemType ?? this.itemType,
+      isExpanded: isExpanded ?? this.isExpanded,
     );
   }
 }
@@ -40,21 +59,67 @@ final inventorySearchProvider =
     );
 
 class InventorySearchNotifier extends StateNotifier<InventorySearchState> {
-  InventorySearchNotifier()
-    : super(const InventorySearchState(query: '', itemType: null));
+  InventorySearchNotifier() : super(const InventorySearchState.initial());
 
   void setQuery(String query) {
     state = state.copyWith(query: query);
   }
 
   void setItemType(LabItemType? type) {
-    state = state.copyWith(itemType: type);
+    state = state.copyWith(itemType: type, clearItemType: type == null);
+  }
+
+  void openSearch() {
+    state = state.copyWith(isExpanded: true);
+  }
+
+  void closeSearch() {
+    state = state.copyWith(query: '', isExpanded: false);
   }
 
   void reset() {
-    state = const InventorySearchState(query: '', itemType: null);
+    state = const InventorySearchState.initial();
   }
 }
+
+final filteredInventoryProvider = Provider<AsyncValue<List<InventoryEntry>>>((
+  ref,
+) {
+  final search = ref.watch(inventorySearchProvider);
+  final normalizedQuery = search.query.trim().toLowerCase();
+  return ref
+      .watch(activeItemsProvider)
+      .whenData(
+        (items) => items.where((entry) {
+          if (search.itemType != null &&
+              entry.item.itemType != search.itemType) {
+            return false;
+          }
+          if (normalizedQuery.isEmpty) return true;
+          return [
+            entry.item.name,
+            entry.item.category,
+            entry.item.serialNumber ?? '',
+            ...entry.codes.map((code) => code.value),
+          ].any((value) => value.toLowerCase().contains(normalizedQuery));
+        }).toList(),
+      );
+});
+
+final inventorySearchControllerProvider =
+    Provider.autoDispose<TextEditingController>((ref) {
+      final controller = TextEditingController(
+        text: ref.read(inventorySearchProvider).query,
+      );
+      ref.onDispose(controller.dispose);
+      return controller;
+    });
+
+final inventorySearchFocusNodeProvider = Provider.autoDispose<FocusNode>((ref) {
+  final focusNode = FocusNode();
+  ref.onDispose(focusNode.dispose);
+  return focusNode;
+});
 
 final itemProvider = FutureProvider.family<InventoryEntry?, String>((ref, id) {
   return ref.watch(inventoryDatabaseProvider).itemById(id);
