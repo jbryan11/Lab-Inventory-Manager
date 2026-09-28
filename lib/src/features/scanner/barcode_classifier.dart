@@ -24,14 +24,17 @@ class BarcodeClassifier {
   /// Returns null if no valid barcodes are found.
   static List<ClassifiedBarcode> classify(BarcodeCapture capture) {
     return capture.barcodes
-        .map(
-          (barcode) => ClassifiedBarcode(
-            barcode: barcode,
-            parsed: parseScannedCode(barcode.rawValue),
-            role: _roleFromClassifier(barcode.rawValue),
-          ),
-        )
-        .where((e) => e.parsed != null)
+        .map((barcode) {
+          final parsed = parseScannedCode(barcode.rawValue);
+          return parsed != null
+              ? ClassifiedBarcode(
+                  barcode: barcode,
+                  parsed: parsed,
+                  role: _roleFromClassifier(barcode.rawValue),
+                )
+              : null;
+        })
+        .whereType<ClassifiedBarcode>()
         .toList();
   }
 
