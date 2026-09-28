@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:csv/csv.dart';
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lab_inventory_manager/src/data/inventory_database.dart';
@@ -18,28 +20,14 @@ void main() {
 
     tearDown(() => database.close());
 
-    group('JSON Export', () {
-      test('exports inventory with correct schema version and timestamp', () async {
-        await database.saveItem(_item(id: 'item-1'), [
-          _code(itemId: 'item-1', value: 'ITEM-001'),
-        ]);
-
-        final json = await exportService._itemToJson(
-          await database.itemById('item-1') as InventoryEntry,
-        );
-
-        expect(json['id'], 'item-1');
-        expect(json['name'], 'Test item');
-        expect(json['itemType'], 'equipment');
-        expect(json['category'], 'Test');
-        expect(json['codes'], isA<List>());
-        expect(json['isArchived'], false);
-        expect(json['createdAt'], isNotNull);
-      });
-
-      test('exports all code roles in JSON', () async {
+    test(
+      'builds a parseable JSON payload with items and top-level codes',
+      () async {
         await database.saveItem(
-          _item(id: 'item-1', configuration: ItemCodeConfiguration.packageAndItem),
+          _item(
+            id: 'item-1',
+            configuration: ItemCodeConfiguration.packageAndItem,
+          ),
           [
             _code(itemId: 'item-1', value: 'ITEM-001'),
             _code(
@@ -47,233 +35,163 @@ void main() {
               value: 'PKG-1P',
               role: ItemCodeRole.package1P,
             ),
-            _code(
-              itemId: 'item-1',
-              value: 'PKG-1T',
-              role: ItemCodeRole.package1T,
-            ),
           ],
         );
+        final exportedAt = DateTime.utc(2026, 9, 28, 8, 30);
 
-        final entry = await database.itemById('item-1') as InventoryEntry;
-        final json = await exportService._itemToJson(entry);
-
-        expect((json['codes'] as List).length, 3);
-        expect(
-          (json['codes'] as List).map((c) => c['role']),
-          contains('item'),
+        final payload = exportService.buildJsonPayload(
+          await database.allItems(),
+          exportedAt: exportedAt,
         );
-        expect(
-          (json['codes'] as List).map((c) => c['role']),
-          contains('package1P'),
-        );
-      });
-
-      test('includes archived items in export', () async {
-        await database.saveItem(_item(id: 'item-1'), [
-          _code(itemId: 'item-1', value: 'ITEM-001'),
-        ]);
-        await database.setArchived('item-1', archived: true);
-
-        final json = await exportService._itemToJson(
-          await database.itemById('item-1') as InventoryEntry,
-        );
-
-        expect(json['isArchived'], true);
-        expect(json['archivedAt'], isNotNull);
-      });
-
-      test('JSON export is valid and parseable', () async {
-        await database.saveItem(_item(id: 'item-1'), [
-          _code(itemId: 'item-1', value: 'ITEM-001'),
-        ]);
-        await database.saveItem(_item(id: 'item-2'), [
-          _code(itemId: 'item-2', value: 'ITEM-002'),
-        ]);
-
-        final items = await database.allItems();
-        final payload = <String, Object?>{
-          'schemaVersion': 2,
-          'exportedAt': DateTime.now().toUtc().toIso8601String(),
-          'items': items.map(exportService._itemToJson).toList(),
-        };
-        final jsonString = jsonEncode(payload);
-        final parsed = jsonDecode(jsonString);
+        final parsed = jsonDecode(jsonEncode(payload)) as Map<String, dynamic>;
 
         expect(parsed['schemaVersion'], 2);
-        expect((parsed['items'] as List).length, 2);
-      });
+        expect(parsed['exportedAt'], exportedAt.toIso8601String());
+        expect(parsed['items'], hasLength(1));
+        expect(parsed['codes'], hasLength(2));
+        expect(
+          (parsed['codes'] as List).map((code) => code['itemId']),
+          everyElement('item-1'),
+        );
+      },
+    );
+
+    test('CSV has the stable spreadsheet column order', () async {
+      final csv = exportService.buildCsv(const []);
+      final rows = _parse(csv);
+
+      expect(rows, hasLength(1));
+      expect(rows.single, [
+        'id',
+        'name',
+        'itemType',
+        'category',
+        'serialNumber',
+        'codeConfiguration',
+        'itemCode',
+        'package1P',
+        'package1T',
+        'isArchived',
+        'createdAt',
+        'updatedAt',
+        'archivedAt',
+      ]);
     });
 
-    group('CSV Export', () {
-      test('generates CSV with correct headers', () async {
-        await database.saveItem(_item(id: 'item-1'), [
-          _code(itemId: 'item-1', value: 'ITEM-001'),
-        ]);
-
-        final items = await database.allItems();
-        final rows = <List<Object?>>[
-          [
-            'id',
-            'name',
-            'itemType',
-            'category',
-            'serialNumber',
-            'codeConfiguration',
-            'itemCode',
-            'package1P',
-            'package1T',
-            'isArchived',
-            'createdAt',
-            'updatedAt',
-            'archivedAt',
-          ],
-          ...items.map(
-            (entry) => [
-              entry.item.id,
-              entry.item.name,
-              entry.item.itemType.name,
-              entry.item.category,
-              entry.item.serialNumber ?? '',
-              entry.item.codeConfiguration.name,
-              entry.codeFor(ItemCodeRole.item)?.value ?? '',
-              entry.codeFor(ItemCodeRole.package1P)?.value ?? '',
-              entry.codeFor(ItemCodeRole.package1T)?.value ?? '',
-              entry.item.isArchived,
-              entry.item.createdAt.toUtc().toIso8601String(),
-              entry.item.updatedAt.toUtc().toIso8601String(),
-              entry.item.archivedAt?.toUtc().toIso8601String() ?? '',
-            ],
+    test(
+      'CSV round trip preserves commas, quotes, newlines, and Unicode',
+      () async {
+        const name = 'Precision, "bench"\nmeter';
+        const category = '測試 equipment';
+        const serial = 'SN,\n"100"';
+        const codeValue = 'CODE, "A"\n1';
+        await database.saveItem(
+          _item(
+            id: 'item-1',
+            name: name,
+            category: category,
+            serialNumber: serial,
           ),
-        ];
+          [_code(itemId: 'item-1', value: codeValue)],
+        );
 
-        expect(rows.first.length, 13);
-        expect(rows.first.contains('id'), true);
-        expect(rows.first.contains('itemCode'), true);
-        expect(rows.first.contains('package1P'), true);
-      });
+        final csv = exportService.buildCsv(await database.allItems());
+        final rows = _parse(csv);
 
-      test('escapes CSV special characters in cell values', () async {
-        final service = ExportService(database);
-        final cell1 = service._csvCell('value with "quotes"');
-        final cell2 = service._csvCell('value,with,commas');
-        final cell3 = service._csvCell('normal');
+        expect(csv, contains('\r\n'));
+        expect(rows, hasLength(2));
+        expect(rows[1][1], name);
+        expect(rows[1][3], category);
+        expect(rows[1][4], serial);
+        expect(rows[1][6], codeValue);
+      },
+    );
 
-        expect(cell1, '"value with ""quotes"""');
-        expect(cell2, '"value,with,commas"');
-        expect(cell3, '"normal"');
-      });
-
-      test('CSV output is parseable as rows', () async {
-        await database.saveItem(_item(id: 'item-1'), [
+    test('CSV includes all code roles and empty optional values', () async {
+      await database.saveItem(
+        _item(
+          id: 'item-1',
+          configuration: ItemCodeConfiguration.packageAndItem,
+          serialNumber: null,
+        ),
+        [
           _code(itemId: 'item-1', value: 'ITEM-001'),
-        ]);
-
-        final items = await database.allItems();
-        final rows = <List<Object?>>[
-          [
-            'id',
-            'name',
-            'itemType',
-            'category',
-            'serialNumber',
-            'codeConfiguration',
-            'itemCode',
-            'package1P',
-            'package1T',
-            'isArchived',
-            'createdAt',
-            'updatedAt',
-            'archivedAt',
-          ],
-          ...items.map(
-            (entry) => [
-              entry.item.id,
-              entry.item.name,
-              entry.item.itemType.name,
-              entry.item.category,
-              entry.item.serialNumber ?? '',
-              entry.item.codeConfiguration.name,
-              entry.codeFor(ItemCodeRole.item)?.value ?? '',
-              entry.codeFor(ItemCodeRole.package1P)?.value ?? '',
-              entry.codeFor(ItemCodeRole.package1T)?.value ?? '',
-              entry.item.isArchived,
-              entry.item.createdAt.toUtc().toIso8601String(),
-              entry.item.updatedAt.toUtc().toIso8601String(),
-              entry.item.archivedAt?.toUtc().toIso8601String() ?? '',
-            ],
+          _code(
+            itemId: 'item-1',
+            value: 'PKG-1P',
+            role: ItemCodeRole.package1P,
           ),
-        ];
-        final csv = rows.map((row) => row.map((v) => '"${v?.toString() ?? ""}"').join(',')).join('\r\n');
-
-        expect(csv.split('\r\n').length, 2); // header + 1 item
-        expect(csv.contains('item-1'), true);
-        expect(csv.contains('ITEM-001'), true);
-      });
-
-      test('handles missing codes gracefully in CSV', () async {
-        await database.saveItem(_item(id: 'item-1'), [
-          _code(itemId: 'item-1', value: 'ITEM-001'),
-          // No package codes
-        ]);
-
-        final items = await database.allItems();
-        expect(items.first.codeFor(ItemCodeRole.package1P), isNull);
-        expect(items.first.codeFor(ItemCodeRole.package1T), isNull);
-
-        final rows = <List<Object?>>[
-          [
-            'id',
-            'name',
-            'itemType',
-            'category',
-            'serialNumber',
-            'codeConfiguration',
-            'itemCode',
-            'package1P',
-            'package1T',
-            'isArchived',
-            'createdAt',
-            'updatedAt',
-            'archivedAt',
-          ],
-          ...items.map(
-            (entry) => [
-              entry.item.id,
-              entry.item.name,
-              entry.item.itemType.name,
-              entry.item.category,
-              entry.item.serialNumber ?? '',
-              entry.item.codeConfiguration.name,
-              entry.codeFor(ItemCodeRole.item)?.value ?? '',
-              entry.codeFor(ItemCodeRole.package1P)?.value ?? '',
-              entry.codeFor(ItemCodeRole.package1T)?.value ?? '',
-              entry.item.isArchived,
-              entry.item.createdAt.toUtc().toIso8601String(),
-              entry.item.updatedAt.toUtc().toIso8601String(),
-              entry.item.archivedAt?.toUtc().toIso8601String() ?? '',
-            ],
+          _code(
+            itemId: 'item-1',
+            value: 'PKG-1T',
+            role: ItemCodeRole.package1T,
           ),
-        ];
+        ],
+      );
 
-        expect(rows[1][7], ''); // package1P is empty
-        expect(rows[1][8], ''); // package1T is empty
-      });
+      final row = _parse(exportService.buildCsv(await database.allItems()))
+          .singleWhere((row) => row.first == 'item-1');
+
+      expect(row[4], '');
+      expect(row[6], 'ITEM-001');
+      expect(row[7], 'PKG-1P');
+      expect(row[8], 'PKG-1T');
+      expect(row[9], 'false');
+      expect(row[12], '');
+    });
+
+    test('CSV includes archived state and ISO-8601 timestamps', () async {
+      await database.saveItem(_item(id: 'item-1'), [
+        _code(itemId: 'item-1', value: 'ITEM-001'),
+      ]);
+      await database.setArchived('item-1', archived: true);
+
+      final row = _parse(exportService.buildCsv(await database.allItems()))
+          .singleWhere((row) => row.first == 'item-1');
+
+      expect(row[9], 'true');
+      expect(DateTime.tryParse(row[10] as String), isNotNull);
+      expect(DateTime.tryParse(row[11] as String), isNotNull);
+      expect(DateTime.tryParse(row[12] as String), isNotNull);
+    });
+
+    test('CSV emits one record per inventory item', () async {
+      await database.saveItem(_item(id: 'item-1'), [
+        _code(itemId: 'item-1', value: 'ITEM-001'),
+      ]);
+      await database.saveItem(_item(id: 'item-2'), [
+        _code(itemId: 'item-2', value: 'ITEM-002'),
+      ]);
+
+      final rows = _parse(exportService.buildCsv(await database.allItems()));
+
+      expect(rows, hasLength(3));
+      expect(rows.skip(1).map((row) => row.first), {'item-1', 'item-2'});
     });
   });
 }
 
+List<List<dynamic>> _parse(String csv) {
+  return const CsvToListConverter(
+    eol: '\r\n',
+    shouldParseNumbers: false,
+  ).convert(csv);
+}
+
 InventoryItemsCompanion _item({
   required String id,
+  String name = 'Test item',
+  String category = 'Test',
+  String? serialNumber = 'SN-001',
   ItemCodeConfiguration configuration = ItemCodeConfiguration.itemOnly,
 }) {
   final now = DateTime.utc(2026, 8, 25);
   return InventoryItemsCompanion(
     id: Value(id),
-    name: const Value('Test item'),
+    name: Value(name),
     itemType: const Value(LabItemType.equipment),
-    category: const Value('Test'),
-    serialNumber: const Value('SN-001'),
+    category: Value(category),
+    serialNumber: Value(serialNumber),
     codeConfiguration: Value(configuration),
     createdAt: Value(now),
     updatedAt: Value(now),
