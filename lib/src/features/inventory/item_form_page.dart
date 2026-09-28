@@ -6,6 +6,9 @@ import 'package:go_router/go_router.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/exceptions.dart';
+import '../../core/logger.dart';
+import '../../core/validators.dart';
 import '../../data/inventory_database.dart';
 import '../../domain/inventory_enums.dart';
 import '../../providers.dart';
@@ -55,23 +58,24 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
 
   Future<void> _loadItem() async {
     setState(() => _loading = true);
-    final item = await ref
+    final entry = await ref
         .read(inventoryDatabaseProvider)
         .itemById(widget.itemId!);
     if (!mounted) return;
-    if (item == null) {
+    if (entry == null) {
       context.pop();
       return;
     }
-    _existing = item;
-    _itemId = item.id;
-    _nameController.text = item.name;
-    _categoryController.text = item.category;
-    _serialController.text = item.serialNumber ?? '';
-    _codeController.text = item.codeValue;
-    _itemType = item.itemType;
-    _codeType = item.codeType;
-    _codeSource = item.codeSource;
+    _existing = entry.item;
+    final itemCode = entry.codeFor(ItemCodeRole.item);
+    _itemId = entry.item.id;
+    _nameController.text = entry.item.name;
+    _categoryController.text = entry.item.category;
+    _serialController.text = entry.item.serialNumber ?? '';
+    _codeController.text = itemCode?.value ?? '';
+    _itemType = entry.item.itemType;
+    _codeType = itemCode?.codeType ?? ItemCodeType.qr;
+    _codeSource = itemCode?.source ?? ItemCodeSource.scanned;
     setState(() => _loading = false);
   }
 
@@ -93,7 +97,7 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
         ref
             .watch(activeItemsProvider)
             .valueOrNull
-            ?.map((item) => item.category)
+            ?.map((entry) => entry.item.category)
             .toSet()
             .toList()
           ?..sort();
@@ -278,41 +282,67 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    
     setState(() => _loading = true);
     final database = ref.read(inventoryDatabaseProvider);
+    final name = _nameController.text.trim();
+    final category = _categoryController.text.trim();
     final codeValue = _codeController.text.trim();
-    final duplicate = await database.itemByCode(codeValue);
-    if (duplicate != null && duplicate.id != _itemId) {
-      if (!mounted) return;
-      setState(() => _loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('This code belongs to ${duplicate.name}.')),
-      );
-      return;
-    }
-
-    final now = DateTime.now().toUtc();
+    
     try {
+      // Validate input
+      AppLogger.debug('Validating item data...');
+      InventoryValidator.validateName(name);
+      InventoryValidator.validateCategory(category);
+      InventoryValidator.validateCodeValue(codeValue);
+      InventoryValidator.validateSerialNumber(
+        _serialController.text.trim().isEmpty ? null : _serialController.text.trim(),
+      );
+      
+      // Check for duplicate code
+      AppLogger.debug('Checking for duplicate code: $codeValue');
+      final duplicate = await database.itemByCode(codeValue);
+      if (duplicate != null && duplicate.item.id != _itemId) {
+        if (!mounted) return;
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('This code belongs to ${duplicate.item.name}.')),
+        );
+        return;
+      }
+
+      final now = DateTime.now().toUtc();
+      AppLogger.info('Saving item: $name');
+      
       await database.saveItem(
         InventoryItemsCompanion(
           id: Value(_itemId),
-          name: Value(_nameController.text.trim()),
+          name: Value(name),
           itemType: Value(_itemType),
-          category: Value(_categoryController.text.trim()),
+          category: Value(category),
           serialNumber: Value(
             _serialController.text.trim().isEmpty
                 ? null
                 : _serialController.text.trim(),
           ),
-          codeType: Value(_codeType),
-          codeValue: Value(codeValue),
-          codeSource: Value(_codeSource),
+          codeConfiguration: Value(ItemCodeConfiguration.itemOnly),
           createdAt: Value(_existing?.createdAt ?? now),
           updatedAt: Value(now),
           isArchived: Value(_existing?.isArchived ?? false),
           archivedAt: Value(_existing?.archivedAt),
         ),
+        [
+          InventoryItemCodesCompanion(
+            itemId: Value(_itemId),
+            role: const Value(ItemCodeRole.item),
+            codeType: Value(_codeType),
+            value: Value(codeValue),
+            source: Value(_codeSource),
+          ),
+        ],
       );
+      
+      AppLogger.info('Item saved successfully: $_itemId');
       ref.invalidate(activeItemsProvider);
       ref.invalidate(itemProvider(_itemId));
       if (!mounted) return;
@@ -321,11 +351,27 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
       } else {
         context.go('/item/$_itemId');
       }
-    } catch (error) {
+    } on ValidationException catch (e) {
+      AppLogger.warning('Validation failed: $e');
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Could not save item: $error')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    } on DatabaseException catch (e) {
+      AppLogger.error('Database error while saving item', e);
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to save item: ${e.message}')),
+      );
+    } catch (error, stackTrace) {
+      AppLogger.error('Unexpected error while saving item', error, stackTrace);
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not save item: $error')),
+      );
     }
   }
 }
@@ -378,12 +424,19 @@ class _CodePreview extends StatelessWidget {
   }
 
   Barcode _barcodeFor(ItemCodeType type) => switch (type) {
+    ItemCodeType.qr => Barcode.qrCode(),
+    ItemCodeType.code128 => Barcode.code128(),
+    ItemCodeType.code39 => Barcode.code39(),
+    ItemCodeType.code93 => Barcode.code93(),
+    ItemCodeType.codabar => Barcode.codabar(),
     ItemCodeType.ean13 => Barcode.ean13(),
     ItemCodeType.ean8 => Barcode.ean8(),
     ItemCodeType.upcA => Barcode.upcA(),
     ItemCodeType.upcE => Barcode.upcE(),
     ItemCodeType.dataMatrix => Barcode.dataMatrix(),
-    ItemCodeType.qr || ItemCodeType.code128 || ItemCodeType.unknown =>
-      Barcode.code128(),
+    ItemCodeType.itf => Barcode.itf14(),
+    ItemCodeType.pdf417 => Barcode.pdf417(),
+    ItemCodeType.aztec => Barcode.aztec(),
+    ItemCodeType.unknown => Barcode.code128(),
   };
 }

@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/logger.dart';
 import 'data/inventory_database.dart';
 import 'domain/inventory_enums.dart';
 import 'services/export_service.dart';

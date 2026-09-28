@@ -30,15 +30,6 @@ class LabInventoryApp extends StatelessWidget {
             scannedCodeType: ItemCodeType.values
                 .where((type) => type.name == codeTypeName)
                 .firstOrNull,
-            package1P: state.uri.queryParameters['package1P'],
-            package1PType: _codeType(
-              state.uri.queryParameters['package1PType'],
-            ),
-            package1T: state.uri.queryParameters['package1T'],
-            package1TType: _codeType(
-              state.uri.queryParameters['package1TType'],
-            ),
-            packageMode: state.uri.queryParameters['packageMode'] == 'true',
           );
         },
       ),

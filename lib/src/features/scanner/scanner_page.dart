@@ -116,16 +116,16 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
       return;
     }
 
-    final item = await ref.read(inventoryDatabaseProvider).itemByCode(value);
+    final entry = await ref.read(inventoryDatabaseProvider).itemByCode(value);
     if (!mounted) return;
 
-    if (item != null) {
-      if (item.isArchived) {
+    if (entry != null) {
+      if (entry.item.isArchived) {
         final restore = await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('Archived item'),
-            content: Text('${item.name} is archived. Restore it?'),
+            content: Text('${entry.item.name} is archived. Restore it?'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
@@ -141,15 +141,15 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
         if (restore == true) {
           await ref
               .read(inventoryDatabaseProvider)
-              .setArchived(item.id, archived: false);
+              .setArchived(entry.item.id, archived: false);
           ref.invalidate(activeItemsProvider);
-          if (mounted) context.go('/item/${item.id}');
+          if (mounted) context.go('/item/${entry.item.id}');
           return;
         }
         await _resume();
         return;
       }
-      context.go('/item/${item.id}');
+      context.go('/item/${entry.item.id}');
       return;
     }
 

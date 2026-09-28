@@ -5,6 +5,8 @@ import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../core/exceptions.dart';
+import '../core/logger.dart';
 import '../domain/inventory_enums.dart';
 
 part 'inventory_database.g.dart';
@@ -64,23 +66,70 @@ class InventoryDatabase extends _$InventoryDatabase {
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
-    onCreate: (migrator) => migrator.createAll(),
+    onCreate: (migrator) async {
+      try {
+        AppLogger.info('Creating database schema...');
+        await migrator.createAll();
+        AppLogger.info('Database schema created successfully');
+      } catch (e, st) {
+        AppLogger.error('Failed to create database schema', e, st);
+        throw MigrationException(
+          'Failed to create database schema: $e',
+          originalError: e,
+          stackTrace: st,
+        );
+      }
+    },
     onUpgrade: (migrator, from, to) async {
-      if (from < 2) {
-        await migrator.createTable(inventoryItemCodes);
-        await customStatement('''
-          INSERT INTO inventory_item_codes
-            (item_id, role, code_type, value, source)
-          SELECT id, 'item', code_type, code_value, code_source
-          FROM inventory_items
-        ''');
-        await migrator.alterTable(
-          TableMigration(
-            inventoryItems,
-            columnTransformer: {
-              inventoryItems.codeConfiguration: const Constant('itemOnly'),
-            },
-          ),
+      try {
+        AppLogger.info('Migrating database from v$from to v$to...');
+        if (from < 2) {
+          // Step 1: Validate old schema
+          AppLogger.debug('Validating old schema before migration...');
+          final oldItems = await customSelect(
+            'SELECT id, code_type, code_value, code_source FROM inventory_items LIMIT 1',
+          ).get();
+          AppLogger.debug('Old schema validation passed');
+
+          // Step 2: Create new table
+          AppLogger.debug('Creating inventory_item_codes table...');
+          await migrator.createTable(inventoryItemCodes);
+
+          // Step 3: Migrate data with error handling
+          AppLogger.debug('Migrating item codes...');
+          await customStatement('''
+            INSERT INTO inventory_item_codes
+              (item_id, role, code_type, value, source)
+            SELECT id, 'item', code_type, code_value, code_source
+            FROM inventory_items
+          ''');
+
+          // Step 4: Verify migration
+          final migratedCount = await customSelect(
+            'SELECT COUNT(*) as cnt FROM inventory_item_codes',
+          ).get();
+          AppLogger.debug('Migrated ${migratedCount.first.data['cnt']} codes');
+
+          // Step 5: Alter original table
+          AppLogger.debug('Altering inventory_items table...');
+          await migrator.alterTable(
+            TableMigration(
+              inventoryItems,
+              columnTransformer: {
+                inventoryItems.codeConfiguration: const Constant('itemOnly'),
+              },
+            ),
+          );
+        }
+        AppLogger.info('Database migration completed successfully');
+      } on MigrationException {
+        rethrow;
+      } catch (e, st) {
+        AppLogger.error('Database migration failed', e, st);
+        throw MigrationException(
+          'Failed to migrate database from v$from to v$to: $e',
+          originalError: e,
+          stackTrace: st,
         );
       }
     },
@@ -147,47 +196,113 @@ class InventoryDatabase extends _$InventoryDatabase {
   }
 
   Future<InventoryEntry?> itemById(String id) async {
-    final item = await (select(
-      inventoryItems,
-    )..where((row) => row.id.equals(id))).getSingleOrNull();
-    if (item == null) return null;
-    final codes = await (select(
-      inventoryItemCodes,
-    )..where((row) => row.itemId.equals(id))).get();
-    return InventoryEntry(item: item, codes: codes);
+    try {
+      AppLogger.debug('Fetching item by ID: $id');
+      final item = await (select(
+        inventoryItems,
+      )..where((row) => row.id.equals(id))).getSingleOrNull();
+      if (item == null) {
+        AppLogger.debug('Item not found: $id');
+        return null;
+      }
+      final codes = await (select(
+        inventoryItemCodes,
+      )..where((row) => row.itemId.equals(id))).get();
+      AppLogger.debug('Found item $id with ${codes.length} codes');
+      return InventoryEntry(item: item, codes: codes);
+    } catch (e, st) {
+      AppLogger.error('Failed to fetch item $id', e, st);
+      throw DatabaseException(
+        'Failed to fetch item: $e',
+        originalError: e,
+        stackTrace: st,
+      );
+    }
   }
 
   Future<InventoryEntry?> itemByCode(String value) async {
-    final normalized = normalizeCodeValue(value);
-    if (normalized.isEmpty) return null;
-    final code = await (select(
-      inventoryItemCodes,
-    )..where((row) => row.value.equals(normalized))).getSingleOrNull();
-    return code == null ? null : itemById(code.itemId);
+    try {
+      final normalized = normalizeCodeValue(value);
+      if (normalized.isEmpty) {
+        AppLogger.warning('Attempted to search with empty code value');
+        return null;
+      }
+      AppLogger.debug('Searching for item by code: $normalized');
+      final code = await (select(
+        inventoryItemCodes,
+      )..where((row) => row.value.equals(normalized))).getSingleOrNull();
+      if (code == null) {
+        AppLogger.debug('No item found with code: $normalized');
+        return null;
+      }
+      return itemById(code.itemId);
+    } catch (e, st) {
+      AppLogger.error('Failed to search item by code', e, st);
+      throw DatabaseException(
+        'Failed to search item by code: $e',
+        originalError: e,
+        stackTrace: st,
+      );
+    }
   }
 
   Future<void> saveItem(
     InventoryItemsCompanion item,
     List<InventoryItemCodesCompanion> codes,
-  ) {
-    return transaction(() async {
-      await into(inventoryItems).insertOnConflictUpdate(item);
+  ) async {
+    try {
       final itemId = item.id.value;
-      await (delete(
-        inventoryItemCodes,
-      )..where((row) => row.itemId.equals(itemId))).go();
-      await batch((batch) => batch.insertAll(inventoryItemCodes, codes));
-    });
+      AppLogger.info('Saving item $itemId with ${codes.length} code(s)');
+      
+      await transaction(() async {
+        try {
+          // Save/update item
+          await into(inventoryItems).insertOnConflictUpdate(item);
+          AppLogger.debug('Item $itemId saved successfully');
+          
+          // Delete old codes
+          await (delete(
+            inventoryItemCodes,
+          )..where((row) => row.itemId.equals(itemId))).go();
+          AppLogger.debug('Old codes for item $itemId deleted');
+          
+          // Insert new codes
+          await batch((batch) => batch.insertAll(inventoryItemCodes, codes));
+          AppLogger.info('Item $itemId and codes saved successfully');
+        } catch (e, st) {
+          AppLogger.error('Transaction failed for item $itemId', e, st);
+          rethrow;
+        }
+      });
+    } catch (e, st) {
+      AppLogger.error('Failed to save item', e, st);
+      throw DatabaseException(
+        'Failed to save item: $e',
+        originalError: e,
+        stackTrace: st,
+      );
+    }
   }
 
   Future<void> setArchived(String id, {required bool archived}) async {
-    await (update(inventoryItems)..where((row) => row.id.equals(id))).write(
-      InventoryItemsCompanion(
-        isArchived: Value(archived),
-        archivedAt: Value(archived ? DateTime.now().toUtc() : null),
-        updatedAt: Value(DateTime.now().toUtc()),
-      ),
-    );
+    try {
+      AppLogger.info('Setting item $id archive status to $archived');
+      await (update(inventoryItems)..where((row) => row.id.equals(id))).write(
+        InventoryItemsCompanion(
+          isArchived: Value(archived),
+          archivedAt: Value(archived ? DateTime.now().toUtc() : null),
+          updatedAt: Value(DateTime.now().toUtc()),
+        ),
+      );
+      AppLogger.info('Item $id archive status updated successfully');
+    } catch (e, st) {
+      AppLogger.error('Failed to set archive status for item $id', e, st);
+      throw DatabaseException(
+        'Failed to set archive status: $e',
+        originalError: e,
+        stackTrace: st,
+      );
+    }
   }
 
   List<InventoryEntry> _groupEntries(List<TypedResult> rows) {

@@ -105,7 +105,9 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
                     itemCount: visible.length,
                     separatorBuilder: (_, _) => const Divider(height: 1),
                     itemBuilder: (context, index) {
-                      final item = visible[index];
+                      final entry = visible[index];
+                      final item = entry.item;
+                      final code = entry.codeFor(ItemCodeRole.item);
                       return ListTile(
                         leading: CircleAvatar(
                           child: Icon(_iconFor(item.itemType)),
@@ -113,7 +115,7 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
                         title: Text(item.name),
                         subtitle: Text(
                           '${item.itemType.label} · ${item.category}\n'
-                          '${item.codeType.label}: ${item.codeValue}',
+                          '${code?.codeType.label ?? 'Unknown'}: ${code?.value ?? 'N/A'}',
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -223,14 +225,15 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
     if (action != null) await _handleMenu(action);
   }
 
-  bool _matches(InventoryItem item) {
-    if (_type != null && item.itemType != _type) return false;
+  bool _matches(InventoryEntry entry) {
+    if (_type != null && entry.item.itemType != _type) return false;
     if (_query.isEmpty) return true;
+    final codeValue = entry.codeFor(ItemCodeRole.item)?.value ?? '';
     return [
-      item.name,
-      item.category,
-      item.serialNumber ?? '',
-      item.codeValue,
+      entry.item.name,
+      entry.item.category,
+      entry.item.serialNumber ?? '',
+      codeValue,
     ].any((value) => value.toLowerCase().contains(_query));
   }
 
