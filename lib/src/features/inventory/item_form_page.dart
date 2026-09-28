@@ -111,13 +111,14 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
           padding: const EdgeInsets.all(16),
           children: [
             TextFormField(
+              key: const Key('name-field'),
               controller: _nameController,
               textCapitalization: TextCapitalization.sentences,
               decoration: const InputDecoration(
                 labelText: 'Item name',
                 prefixIcon: Icon(Icons.inventory_2_outlined),
               ),
-              validator: _required,
+              validator: (value) => _required(value, 'Name'),
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<LabItemType>(
@@ -133,13 +134,14 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
             ),
             const SizedBox(height: 16),
             TextFormField(
+              key: const Key('category-field'),
               controller: _categoryController,
               textCapitalization: TextCapitalization.sentences,
               decoration: const InputDecoration(
                 labelText: 'Category',
                 hintText: 'For example: Hand tools',
               ),
-              validator: _required,
+              validator: (value) => _required(value, 'Category'),
             ),
             if (categories != null && categories.isNotEmpty) ...[
               const SizedBox(height: 8),
@@ -159,6 +161,7 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
             ],
             const SizedBox(height: 16),
             TextFormField(
+              key: const Key('serial-field'),
               controller: _serialController,
               decoration: const InputDecoration(
                 labelText: 'Serial number (optional)',
@@ -222,8 +225,7 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
                         : (value) => setState(() => _codeType = value!),
                   ),
                 ),
-                if (!_isEditing &&
-                    _codeSource == ItemCodeSource.scanned) ...[
+                if (!_isEditing && _codeSource == ItemCodeSource.scanned) ...[
                   const SizedBox(width: 12),
                   SizedBox.square(
                     dimension: 56,
@@ -238,23 +240,22 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
             ),
             if (_codeController.text.trim().isNotEmpty) ...[
               const SizedBox(height: 16),
-              _CodePreview(
-                type: _codeType,
-                value: _codeController.text.trim(),
-              ),
+              _CodePreview(type: _codeType, value: _codeController.text.trim()),
             ],
             const SizedBox(height: 16),
             TextFormField(
+              key: const Key('code-field'),
               controller: _codeController,
               readOnly: _codeSource == ItemCodeSource.generated || _isEditing,
               onChanged: (_) => setState(() {}),
               decoration: const InputDecoration(
                 labelText: 'Barcode / QR value',
               ),
-              validator: _required,
+              validator: (value) => _required(value, 'Code'),
             ),
             const SizedBox(height: 28),
             FilledButton.icon(
+              key: const Key('save-button'),
               onPressed: _loading ? null : _save,
               icon: const Icon(Icons.save),
               label: Text(_isEditing ? 'Save changes' : 'Create item'),
@@ -265,8 +266,8 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
     );
   }
 
-  String? _required(String? value) {
-    return value == null || value.trim().isEmpty ? 'Required' : null;
+  String? _required(String? value, String label) {
+    return value == null || value.trim().isEmpty ? '$label is required' : null;
   }
 
   Future<void> _scanCode() async {
@@ -282,13 +283,13 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     setState(() => _loading = true);
     final database = ref.read(inventoryDatabaseProvider);
     final name = _nameController.text.trim();
     final category = _categoryController.text.trim();
     final codeValue = _codeController.text.trim();
-    
+
     try {
       // Validate input
       AppLogger.debug('Validating item data...');
@@ -296,9 +297,11 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
       InventoryValidator.validateCategory(category);
       InventoryValidator.validateCodeValue(codeValue);
       InventoryValidator.validateSerialNumber(
-        _serialController.text.trim().isEmpty ? null : _serialController.text.trim(),
+        _serialController.text.trim().isEmpty
+            ? null
+            : _serialController.text.trim(),
       );
-      
+
       // Check for duplicate code
       AppLogger.debug('Checking for duplicate code: $codeValue');
       final duplicate = await database.itemByCode(codeValue);
@@ -306,14 +309,16 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
         if (!mounted) return;
         setState(() => _loading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('This code belongs to ${duplicate.item.name}.')),
+          SnackBar(
+            content: Text('This code belongs to ${duplicate.item.name}.'),
+          ),
         );
         return;
       }
 
       final now = DateTime.now().toUtc();
       AppLogger.info('Saving item: $name');
-      
+
       await database.saveItem(
         InventoryItemsCompanion(
           id: Value(_itemId),
@@ -341,7 +346,7 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
           ),
         ],
       );
-      
+
       AppLogger.info('Item saved successfully: $_itemId');
       ref.invalidate(activeItemsProvider);
       ref.invalidate(itemProvider(_itemId));
@@ -355,9 +360,8 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
       AppLogger.warning('Validation failed: $e');
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
     } on DatabaseException catch (e) {
       AppLogger.error('Database error while saving item', e);
       if (!mounted) return;
@@ -369,9 +373,8 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
       AppLogger.error('Unexpected error while saving item', error, stackTrace);
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not save item: $error')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Could not save item: $error')));
     }
   }
 }
@@ -385,11 +388,7 @@ class _CodePreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final preview = type == ItemCodeType.qr
-        ? QrImageView(
-            data: value,
-            size: 160,
-            backgroundColor: Colors.white,
-          )
+        ? QrImageView(data: value, size: 160, backgroundColor: Colors.white)
         : BarcodeWidget(
             barcode: _barcodeFor(type),
             data: value,
@@ -414,10 +413,7 @@ class _CodePreview extends StatelessWidget {
             border: Border.all(color: Theme.of(context).colorScheme.outline),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: preview,
-          ),
+          child: Padding(padding: const EdgeInsets.all(16), child: preview),
         ),
       ),
     );
