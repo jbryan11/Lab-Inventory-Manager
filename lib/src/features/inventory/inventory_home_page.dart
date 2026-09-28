@@ -75,7 +75,7 @@ class InventoryHomePage extends ConsumerWidget {
                     selected: search.itemType == null,
                     onSelected: (_) => ref
                         .read(inventorySearchProvider.notifier)
-                        .setItemType(null),
+                        .clearItemType(),
                   ),
                 ),
                 ...LabItemType.values.map(

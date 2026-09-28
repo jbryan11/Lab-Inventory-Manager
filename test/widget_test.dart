@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lab_inventory_manager/src/app.dart';
+import 'package:lab_inventory_manager/src/domain/inventory_enums.dart';
 import 'package:lab_inventory_manager/src/features/inventory/inventory_home_page.dart';
 import 'package:lab_inventory_manager/src/features/inventory/item_form_page.dart';
 import 'package:lab_inventory_manager/src/providers.dart';
@@ -76,6 +77,48 @@ void main() {
 
     expect(find.byTooltip('Close search'), findsOneWidget);
     expect(find.text('meter'), findsOneWidget);
+  });
+
+  testWidgets('keeps search state across app lifecycle changes', (
+    tester,
+  ) async {
+    final container = ProviderContainer(
+      overrides: [
+        activeItemsProvider.overrideWith((ref) => Stream.value(const [])),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const LabInventoryApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Search inventory'));
+    await tester.pump();
+    await tester.enterText(find.byType(SearchBar), 'persistent query');
+    await tester.tap(find.text('Equipment'));
+    await tester.pump();
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump();
+    expect(container.read(appLifecycleProvider), AppLifecycleState.paused);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+
+    final search = container.read(inventorySearchProvider);
+    expect(container.read(appLifecycleProvider), AppLifecycleState.resumed);
+    expect(search.query, 'persistent query');
+    expect(search.itemType, LabItemType.equipment);
+    expect(search.isExpanded, isTrue);
+    expect(find.text('persistent query'), findsOneWidget);
   });
 
   testWidgets('shows JSON import in the inventory menu', (tester) async {

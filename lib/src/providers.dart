@@ -6,6 +6,29 @@ import 'domain/inventory_enums.dart';
 import 'services/export_service.dart';
 import 'services/json_importer.dart';
 
+final appLifecycleProvider =
+    StateNotifierProvider<AppLifecycleNotifier, AppLifecycleState?>(
+      (ref) => AppLifecycleNotifier(),
+    );
+
+class AppLifecycleNotifier extends StateNotifier<AppLifecycleState?>
+    with WidgetsBindingObserver {
+  AppLifecycleNotifier() : super(WidgetsBinding.instance.lifecycleState) {
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    this.state = state;
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+}
+
 final inventoryDatabaseProvider = Provider<InventoryDatabase>((ref) {
   final database = InventoryDatabase();
   ref.onDispose(database.close);
@@ -39,16 +62,19 @@ class InventorySearchState {
 
   bool get hasFilters => query.trim().isNotEmpty || itemType != null;
 
-  InventorySearchState copyWith({
-    String? query,
-    LabItemType? itemType,
-    bool clearItemType = false,
-    bool? isExpanded,
-  }) {
+  InventorySearchState copyWith({String? query, bool? isExpanded}) {
     return InventorySearchState(
       query: query ?? this.query,
-      itemType: clearItemType ? null : itemType ?? this.itemType,
+      itemType: itemType,
       isExpanded: isExpanded ?? this.isExpanded,
+    );
+  }
+
+  InventorySearchState withItemType(LabItemType? itemType) {
+    return InventorySearchState(
+      query: query,
+      itemType: itemType,
+      isExpanded: isExpanded,
     );
   }
 }
@@ -65,8 +91,12 @@ class InventorySearchNotifier extends StateNotifier<InventorySearchState> {
     state = state.copyWith(query: query);
   }
 
-  void setItemType(LabItemType? type) {
-    state = state.copyWith(itemType: type, clearItemType: type == null);
+  void setItemType(LabItemType type) {
+    state = state.withItemType(type);
+  }
+
+  void clearItemType() {
+    state = state.withItemType(null);
   }
 
   void openSearch() {
@@ -108,6 +138,8 @@ final filteredInventoryProvider = Provider<AsyncValue<List<InventoryEntry>>>((
 
 final inventorySearchControllerProvider =
     Provider.autoDispose<TextEditingController>((ref) {
+      // Durable query state lives in inventorySearchProvider. The controller is
+      // recreated from it whenever the inventory page is remounted.
       final controller = TextEditingController(
         text: ref.read(inventorySearchProvider).query,
       );

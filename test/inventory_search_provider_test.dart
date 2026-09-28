@@ -20,7 +20,7 @@ void main() {
         LabItemType.equipment,
       );
 
-      notifier.setItemType(null);
+      notifier.clearItemType();
 
       expect(container.read(inventorySearchProvider).itemType, isNull);
       expect(container.read(inventorySearchProvider).query, '  BENCH  ');
