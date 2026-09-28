@@ -5,6 +5,17 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../domain/inventory_enums.dart';
 import '../../providers.dart';
+import 'barcode_classifier.dart';
+
+extension on Iterable<ClassifiedBarcode> {
+  ClassifiedBarcode? firstWhereOrNull(bool Function(ClassifiedBarcode) test) {
+    try {
+      return firstWhere(test);
+    } on StateError {
+      return null;
+    }
+  }
+}
 
 enum ScanMode { find, create }
 
@@ -102,20 +113,58 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
 
   Future<void> _onDetect(BarcodeCapture capture) async {
     if (_handling) return;
-    final barcode = capture.barcodes
-        .where((item) => item.rawValue?.trim().isNotEmpty ?? false)
-        .firstOrNull;
-    if (barcode == null) return;
+    
+    // Classify all barcodes in the capture frame
+    final classified = BarcodeClassifier.classify(capture);
+    if (classified.isEmpty) return;
+
     _handling = true;
     await _controller.stop();
 
-    final value = barcode.rawValue!.trim();
-    final type = _mapFormat(barcode.format);
-    if (widget.returnResult) {
-      context.pop((value: value, type: type));
+    // Handle single barcode
+    if (classified.length == 1) {
+      final value = classified.first.parsed.value;
+      final format = classified.first.barcode.format;
+      final type = _mapFormat(format);
+      
+      if (widget.returnResult) {
+        if (mounted) context.pop((value: value, type: type));
+        return;
+      }
+      
+      await _processSingleBarcode(value, type);
       return;
     }
 
+    // Handle multiple barcodes - try to assign roles
+    final classified1P = classified.firstWhereOrNull(
+      (b) => b.role == ItemCodeRole.package1P,
+    );
+    final classified1T = classified.firstWhereOrNull(
+      (b) => b.role == ItemCodeRole.package1T,
+    );
+    final unclassified = classified
+        .where((b) => b.role == null)
+        .toList();
+
+    final resolved = BarcodeClassifier.resolveMixedRoles(
+      classified1P,
+      classified1T,
+      unclassified,
+    );
+
+    if (resolved != null) {
+      await _processDualBarcodes(resolved.package1P, resolved.package1T);
+    } else {
+      // Fallback: process first barcode if role resolution fails
+      final value = classified.first.parsed.value;
+      final format = classified.first.barcode.format;
+      final type = _mapFormat(format);
+      await _processSingleBarcode(value, type);
+    }
+  }
+
+  Future<void> _processSingleBarcode(String value, ItemCodeType type) async {
     final entry = await ref.read(inventoryDatabaseProvider).itemByCode(value);
     if (!mounted) return;
 
@@ -177,6 +226,94 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
     );
     if (create == true) {
       _openCreate(value, type);
+    } else {
+      await _resume();
+    }
+  }
+
+  Future<void> _processDualBarcodes(
+    ClassifiedBarcode package1P,
+    ClassifiedBarcode package1T,
+  ) async {
+    // Process both barcodes by looking up their items
+    final entry1P =
+        await ref.read(inventoryDatabaseProvider).itemByCode(package1P.parsed.value);
+    final entry1T =
+        await ref.read(inventoryDatabaseProvider).itemByCode(package1T.parsed.value);
+
+    if (!mounted) return;
+
+    // If both items exist, show both results
+    if (entry1P != null && entry1T != null) {
+      final shouldProceed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Both barcodes detected'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('1P: ${entry1P.item.name}'),
+              const SizedBox(height: 8),
+              Text('1T: ${entry1T.item.name}'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Proceed'),
+            ),
+          ],
+        ),
+      );
+
+      if (shouldProceed == true && mounted) {
+        context.go('/item/${entry1P.item.id}');
+        return;
+      }
+      await _resume();
+      return;
+    }
+
+    // If only one barcode found, process it
+    if (entry1P != null) {
+      context.go('/item/${entry1P.item.id}');
+      return;
+    }
+    if (entry1T != null) {
+      context.go('/item/${entry1T.item.id}');
+      return;
+    }
+
+    // Neither barcode found - offer to create
+    if (widget.mode == ScanMode.create) {
+      _openCreate(package1P.parsed.value, _mapFormat(package1P.barcode.format));
+      return;
+    }
+
+    final create = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Items not found'),
+        content: const Text('Neither barcode was found in inventory.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Scan again'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Create item'),
+          ),
+        ],
+      ),
+    );
+    if (create == true) {
+      _openCreate(package1P.parsed.value, _mapFormat(package1P.barcode.format));
     } else {
       await _resume();
     }
