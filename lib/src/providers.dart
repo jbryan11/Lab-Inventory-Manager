@@ -1,9 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'core/logger.dart';
 import 'data/inventory_database.dart';
 import 'domain/inventory_enums.dart';
 import 'services/export_service.dart';
+import 'services/json_importer.dart';
 
 final inventoryDatabaseProvider = Provider<InventoryDatabase>((ref) {
   final database = InventoryDatabase();
@@ -21,18 +21,12 @@ final archivedItemsProvider = StreamProvider<List<InventoryEntry>>((ref) {
 
 /// State for inventory search/filtering.
 class InventorySearchState {
-  const InventorySearchState({
-    required this.query,
-    required this.itemType,
-  });
+  const InventorySearchState({required this.query, required this.itemType});
 
   final String query;
   final LabItemType? itemType;
 
-  InventorySearchState copyWith({
-    String? query,
-    LabItemType? itemType,
-  }) {
+  InventorySearchState copyWith({String? query, LabItemType? itemType}) {
     return InventorySearchState(
       query: query ?? this.query,
       itemType: itemType ?? this.itemType,
@@ -42,12 +36,12 @@ class InventorySearchState {
 
 final inventorySearchProvider =
     StateNotifierProvider<InventorySearchNotifier, InventorySearchState>(
-  (ref) => InventorySearchNotifier(),
-);
+      (ref) => InventorySearchNotifier(),
+    );
 
 class InventorySearchNotifier extends StateNotifier<InventorySearchState> {
   InventorySearchNotifier()
-      : super(const InventorySearchState(query: '', itemType: null));
+    : super(const InventorySearchState(query: '', itemType: null));
 
   void setQuery(String query) {
     state = state.copyWith(query: query);
@@ -68,4 +62,8 @@ final itemProvider = FutureProvider.family<InventoryEntry?, String>((ref, id) {
 
 final exportServiceProvider = Provider<ExportService>((ref) {
   return ExportService(ref.watch(inventoryDatabaseProvider));
+});
+
+final jsonImporterProvider = Provider<JsonImporter>((ref) {
+  return JsonImporter(ref.watch(inventoryDatabaseProvider));
 });

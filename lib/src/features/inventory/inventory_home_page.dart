@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -209,13 +212,14 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
       ),
       items: const [
         PopupMenuItem(
+          value: _MenuAction.importJson,
+          child: Text('Import JSON'),
+        ),
+        PopupMenuItem(
           value: _MenuAction.exportJson,
           child: Text('Export JSON'),
         ),
-        PopupMenuItem(
-          value: _MenuAction.exportCsv,
-          child: Text('Export CSV'),
-        ),
+        PopupMenuItem(value: _MenuAction.exportCsv, child: Text('Export CSV')),
         PopupMenuItem(
           value: _MenuAction.archive,
           child: Text('Archived items'),
@@ -242,6 +246,10 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
       await context.push('/archive');
       return;
     }
+    if (action == _MenuAction.importJson) {
+      await _importJson();
+      return;
+    }
     try {
       final service = ref.read(exportServiceProvider);
       final file = action == _MenuAction.exportJson
@@ -258,9 +266,70 @@ class _InventoryHomePageState extends ConsumerState<InventoryHomePage> {
           .showSnackBar(SnackBar(content: Text('Export failed: $error')));
     }
   }
+
+  Future<void> _importJson() async {
+    final selection = await _pickJsonFile();
+    final path = selection?.path;
+    if (path == null || !mounted) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 20),
+              Expanded(child: Text('Importing inventory...')),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final result = await ref
+        .read(jsonImporterProvider)
+        .importFromFile(File(path));
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+
+    final message = result.success
+        ? 'Imported ${result.itemsImported} items and '
+              '${result.codesImported} codes.'
+        : result.errors.length == 1
+        ? 'Import failed: ${result.errors.first}'
+        : 'Import failed with ${result.errors.length} errors: '
+              '${result.errors.first}';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: result.success
+            ? null
+            : Theme.of(context).colorScheme.error,
+      ),
+    );
+  }
+
+  Future<PlatformFile?> _pickJsonFile() async {
+    try {
+      return await FilePicker.pickFile(
+        type: FileType.custom,
+        allowedExtensions: const ['json'],
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open the file picker: $error')),
+        );
+      }
+      return null;
+    }
+  }
 }
 
-enum _MenuAction { exportJson, exportCsv, archive }
+enum _MenuAction { importJson, exportJson, exportCsv, archive }
 
 IconData _iconFor(LabItemType type) => switch (type) {
   LabItemType.tool => Icons.handyman,
@@ -362,6 +431,14 @@ class _InventoryDrawer extends StatelessWidget {
           },
         ),
         const Divider(),
+        ListTile(
+          leading: const Icon(Icons.file_upload_outlined),
+          title: const Text('Import JSON'),
+          onTap: () {
+            Navigator.pop(context);
+            onMenuSelected(_MenuAction.importJson);
+          },
+        ),
         ListTile(
           leading: const Icon(Icons.archive_outlined),
           title: const Text('Archived items'),

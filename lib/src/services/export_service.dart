@@ -20,18 +20,31 @@ class ExportService {
       AppLogger.info('Starting JSON export...');
       final items = await _database.allItems();
       AppLogger.debug('Exporting ${items.length} items to JSON');
-      
+
       final payload = <String, Object?>{
         'schemaVersion': 2,
         'exportedAt': DateTime.now().toUtc().toIso8601String(),
         'items': items.map(_itemToJson).toList(),
+        'codes': items
+            .expand(
+              (entry) => entry.codes.map(
+                (code) => {
+                  'itemId': entry.item.id,
+                  'role': code.role.name,
+                  'type': code.codeType.name,
+                  'value': code.value,
+                  'source': code.source.name,
+                },
+              ),
+            )
+            .toList(),
       };
-      
+
       final file = await _writeExport(
         'lab-inventory-${_timestamp()}.json',
         const JsonEncoder.withIndent('  ').convert(payload),
       );
-      
+
       AppLogger.info('JSON export completed successfully: ${file.path}');
       return file;
     } catch (e, st) {
@@ -49,7 +62,7 @@ class ExportService {
       AppLogger.info('Starting CSV export...');
       final items = await _database.allItems();
       AppLogger.debug('Exporting ${items.length} items to CSV');
-      
+
       final rows = <List<Object?>>[
         [
           'id',
@@ -85,7 +98,7 @@ class ExportService {
         ),
       ];
       final csv = rows.map((row) => row.map(_csvCell).join(',')).join('\r\n');
-      
+
       final file = await _writeExport('lab-inventory-${_timestamp()}.csv', csv);
       AppLogger.info('CSV export completed successfully: ${file.path}');
       return file;

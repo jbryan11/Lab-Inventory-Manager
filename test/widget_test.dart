@@ -46,6 +46,23 @@ void main() {
     expect(find.byTooltip('Close search'), findsOneWidget);
   });
 
+  testWidgets('shows JSON import in the inventory menu', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          activeItemsProvider.overrideWith((ref) => Stream.value(const [])),
+        ],
+        child: const LabInventoryApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('More'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Import JSON'), findsOneWidget);
+  });
+
   testWidgets('shows a preview for a generated code', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
