@@ -14,17 +14,19 @@ class InventoryValidator {
   ///
   /// Throws [ValidationException] if validation fails.
   static void validateName(String name) {
-    if (name.isEmpty) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) {
       throw ValidationException('Item name cannot be empty');
     }
-    if (name.length < minNameLength) {
+    if (trimmed.length < minNameLength) {
       throw ValidationException(
         'Item name must be at least $minNameLength character',
       );
     }
-    if (name.length > maxNameLength) {
+    if (trimmed.length > maxNameLength) {
       throw ValidationException(
-        'Item name must not exceed $maxNameLength characters (current: ${name.length})',
+        'Item name must not exceed $maxNameLength characters '
+        '(current: ${trimmed.length})',
       );
     }
   }
@@ -33,17 +35,19 @@ class InventoryValidator {
   ///
   /// Throws [ValidationException] if validation fails.
   static void validateCategory(String category) {
-    if (category.isEmpty) {
+    final trimmed = category.trim();
+    if (trimmed.isEmpty) {
       throw ValidationException('Category cannot be empty');
     }
-    if (category.length < minCategoryLength) {
+    if (trimmed.length < minCategoryLength) {
       throw ValidationException(
         'Category must be at least $minCategoryLength character',
       );
     }
-    if (category.length > maxCategoryLength) {
+    if (trimmed.length > maxCategoryLength) {
       throw ValidationException(
-        'Category must not exceed $maxCategoryLength characters (current: ${category.length})',
+        'Category must not exceed $maxCategoryLength characters '
+        '(current: ${trimmed.length})',
       );
     }
   }
@@ -52,8 +56,10 @@ class InventoryValidator {
   ///
   /// Throws [ValidationException] if validation fails.
   static void validateSerialNumber(String? serialNumber) {
-    if (serialNumber != null && serialNumber.isEmpty) {
-      throw ValidationException('Serial number cannot be an empty string. Use null instead.');
+    if (serialNumber != null && serialNumber.trim().isEmpty) {
+      throw ValidationException(
+        'Serial number cannot be an empty string. Use null instead.',
+      );
     }
   }
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'domain/inventory_enums.dart';
@@ -7,8 +8,9 @@ import 'features/inventory/inventory_home_page.dart';
 import 'features/inventory/item_detail_page.dart';
 import 'features/inventory/item_form_page.dart';
 import 'features/scanner/scanner_page.dart';
+import 'providers.dart';
 
-class LabInventoryApp extends StatelessWidget {
+class LabInventoryApp extends ConsumerWidget {
   const LabInventoryApp({super.key});
 
   static final _router = GoRouter(
@@ -56,7 +58,8 @@ class LabInventoryApp extends StatelessWidget {
   );
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.read(appLifecycleProvider);
     return MaterialApp.router(
       title: 'Lab Inventory',
       debugShowCheckedModeBanner: false,
@@ -73,8 +76,4 @@ class LabInventoryApp extends StatelessWidget {
       routerConfig: _router,
     );
   }
-}
-
-ItemCodeType? _codeType(String? name) {
-  return ItemCodeType.values.where((type) => type.name == name).firstOrNull;
 }

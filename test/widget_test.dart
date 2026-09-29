@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lab_inventory_manager/src/app.dart';
+import 'package:lab_inventory_manager/src/domain/inventory_enums.dart';
+import 'package:lab_inventory_manager/src/features/inventory/inventory_home_page.dart';
 import 'package:lab_inventory_manager/src/features/inventory/item_form_page.dart';
 import 'package:lab_inventory_manager/src/providers.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -44,6 +46,96 @@ void main() {
 
     expect(find.text('Search inventory'), findsOneWidget);
     expect(find.byTooltip('Close search'), findsOneWidget);
+  });
+
+  testWidgets('keeps inventory search state when the page is rebuilt', (
+    tester,
+  ) async {
+    final container = ProviderContainer(
+      overrides: [
+        activeItemsProvider.overrideWith((ref) => Stream.value(const [])),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    Widget app(Widget home) => UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(home: home),
+    );
+
+    await tester.pumpWidget(app(const InventoryHomePage()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Search inventory'));
+    await tester.pump();
+    await tester.enterText(find.byType(SearchBar), 'meter');
+    await tester.pump();
+
+    await tester.pumpWidget(app(const SizedBox()));
+    await tester.pump();
+    await tester.pumpWidget(app(const InventoryHomePage()));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Close search'), findsOneWidget);
+    expect(find.text('meter'), findsOneWidget);
+  });
+
+  testWidgets('keeps search state across app lifecycle changes', (
+    tester,
+  ) async {
+    final container = ProviderContainer(
+      overrides: [
+        activeItemsProvider.overrideWith((ref) => Stream.value(const [])),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const LabInventoryApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Search inventory'));
+    await tester.pump();
+    await tester.enterText(find.byType(SearchBar), 'persistent query');
+    await tester.tap(find.text('Equipment'));
+    await tester.pump();
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump();
+    expect(container.read(appLifecycleProvider), AppLifecycleState.paused);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+
+    final search = container.read(inventorySearchProvider);
+    expect(container.read(appLifecycleProvider), AppLifecycleState.resumed);
+    expect(search.query, 'persistent query');
+    expect(search.itemType, LabItemType.equipment);
+    expect(search.isExpanded, isTrue);
+    expect(find.text('persistent query'), findsOneWidget);
+  });
+
+  testWidgets('shows JSON import in the inventory menu', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          activeItemsProvider.overrideWith((ref) => Stream.value(const [])),
+        ],
+        child: const LabInventoryApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('More'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Import JSON'), findsOneWidget);
   });
 
   testWidgets('shows a preview for a generated code', (tester) async {
